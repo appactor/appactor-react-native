@@ -5,6 +5,9 @@ export const appActorReactNativeVersion = '0.1.0';
 
 type JsonObject = Record<string, unknown>;
 type JsonMap<T> = Record<string, T>;
+export type AppActorKeyValueInput<T = unknown> =
+  | Record<string, T>
+  | Iterable<readonly [string, T]>;
 type NativeEventEnvelope = {
   name?: string;
   json?: string;
@@ -72,6 +75,7 @@ const NATIVE_EVENT_NAME = 'appactor_event';
 const PLUGIN_ERROR_NULL_RESPONSE = 1001;
 const PLUGIN_ERROR_INVALID_JSON = 1002;
 const PLUGIN_ERROR_NATIVE_BRIDGE = 1004;
+const APP_ACTOR_SINGLETON_GUARD = Symbol('AppActor.singleton');
 const LEGACY_PROFILE_CURRENT_ALIASES = new Set([
   'appVersion',
   'appBuild',
@@ -102,6 +106,7 @@ const nativeModule: NativeModuleShape | undefined =
 const nativeEmitter = nativeModule
   ? new NativeEventEmitter(nativeModule as never)
   : null;
+let debugSdkLogSubscription: { remove(): void } | null = null;
 
 function isRecord(value: unknown): value is JsonObject {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -125,6 +130,14 @@ function asNumber(value: unknown): number | undefined {
 
 function ensureRecord(value: unknown): JsonObject {
   return isRecord(value) ? value : {};
+}
+
+function isIterable(value: unknown): value is Iterable<unknown> {
+  return (
+    value != null &&
+    typeof (value as { [Symbol.iterator]?: unknown })[Symbol.iterator] ===
+      'function'
+  );
 }
 
 function ensureNativeModule(): NativeModuleShape {
@@ -360,6 +373,39 @@ function validateMetadataKey(key: string): string {
   return key;
 }
 
+function entriesFromInput<T>(
+  input: AppActorKeyValueInput<T>,
+  name: string
+): Array<readonly [string, T]> {
+  if (isIterable(input)) {
+    const normalized: Array<readonly [string, T]> = [];
+    let index = 0;
+    for (const entry of input) {
+      if (!Array.isArray(entry) || entry.length !== 2) {
+        throw new Error(
+          `${name}[${index}] must be a [key, value] entry tuple.`
+        );
+      }
+      const [key, value] = entry;
+      if (typeof key !== 'string') {
+        throw new Error(`${name}[${index}] key must be a string.`);
+      }
+      normalized.push([key, value as T]);
+      index += 1;
+    }
+
+    return normalized;
+  }
+
+  if (isRecord(input)) {
+    return Object.entries(input);
+  }
+
+  throw new Error(
+    `${name} must be an object or iterable of [key, value] entries.`
+  );
+}
+
 function normalizeAttributeValue(
   value: unknown,
   name = 'value'
@@ -406,12 +452,23 @@ function normalizeAttributeValue(
   );
 }
 
-function normalizeAttributes(attributes: Record<string, unknown>): JsonObject {
+function normalizeAttributes(
+  attributes: AppActorKeyValueInput
+): JsonObject {
   return Object.fromEntries(
-    Object.entries(attributes).map(([key, value]) => {
+    entriesFromInput(attributes, 'attributes').map(([key, value]) => {
       validateCustomKey(key);
       return [key, normalizeAttributeValue(value, `attributes[${key}]`)];
     })
+  );
+}
+
+function normalizeMetadata(metadata: AppActorKeyValueInput): JsonObject {
+  return Object.fromEntries(
+    entriesFromInput(metadata, 'metadata').map(([key, value]) => [
+      validateMetadataKey(key),
+      normalizeAttributeValue(value, `metadata[${key}]`),
+    ])
   );
 }
 
@@ -433,7 +490,7 @@ function resolveApiKey(
     return apiKey.android;
   }
 
-  throw new Error(
+  throw new UnsupportedError(
     'AppActorPlatformKeys is only supported on iOS and Android.'
   );
 }
@@ -447,6 +504,38 @@ function decodeEventPayload(payload?: string | null): JsonObject {
   } catch {
     return {};
   }
+}
+
+function isDevelopmentRuntime(): boolean {
+  return typeof __DEV__ === 'boolean' ? __DEV__ : false;
+}
+
+function maybeLogSdkEventInDebug(event: NativeEventEnvelope): void {
+  if (!isDevelopmentRuntime() || event.name !== 'sdk_log') {
+    return;
+  }
+  const payload = decodeEventPayload(event.json);
+  const level = (asString(payload.level) ?? 'info').toUpperCase();
+  const category = asString(payload.category) ?? '';
+  const message = asString(payload.message) ?? '';
+  const logger =
+    typeof console.debug === 'function' ? console.debug : console.log;
+  logger(`[AppActor/${level}] ${category}: ${message}`);
+}
+
+function ensureDebugSdkLogSubscription(): void {
+  if (!nativeEmitter || debugSdkLogSubscription != null || !isDevelopmentRuntime()) {
+    return;
+  }
+  debugSdkLogSubscription = nativeEmitter.addListener(
+    NATIVE_EVENT_NAME,
+    maybeLogSdkEventInDebug
+  );
+}
+
+function resetDebugSdkLogSubscription(): void {
+  debugSdkLogSubscription?.remove();
+  debugSdkLogSubscription = null;
 }
 
 function mapValues<T>(
@@ -838,6 +927,13 @@ export class AppActorError extends Error {
   }
 }
 
+export class UnsupportedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnsupportedError';
+  }
+}
+
 export class AppActorOptions {
   constructor(public readonly logLevel?: AppActorLogLevel) {}
 
@@ -936,7 +1032,7 @@ export class AppActorAttribution {
     public readonly creative?: string,
     public readonly clickId?: string,
     public readonly attributedAt?: Date,
-    public readonly metadata: Record<string, unknown> = {}
+    public readonly metadata: AppActorKeyValueInput = {}
   ) {}
 
   static customProvider(
@@ -963,7 +1059,7 @@ export class AppActorAttribution {
       creative?: string;
       clickId?: string;
       attributedAt?: Date;
-      metadata?: Record<string, unknown>;
+      metadata?: AppActorKeyValueInput;
     } = {}
   ): AppActorAttribution {
     return new AppActorAttribution(
@@ -1016,6 +1112,8 @@ export class AppActorAttribution {
     validateAttributionString('creative', this.creative);
     validateAttributionString('click_id', this.clickId);
 
+    const metadata = normalizeMetadata(this.metadata);
+
     return {
       provider: this.providerOverride ?? this.provider,
       ...(this.status ? { status: this.status } : {}),
@@ -1041,17 +1139,32 @@ export class AppActorAttribution {
       ...(this.attributedAt
         ? { attributed_at: this.attributedAt.toISOString() }
         : {}),
-      ...(Object.keys(this.metadata).length > 0
-        ? {
-            metadata: Object.fromEntries(
-              Object.entries(this.metadata).map(([key, value]) => [
-                validateMetadataKey(key),
-                normalizeAttributeValue(value, `metadata[${key}]`),
-              ])
-            ),
-          }
-        : {}),
+      ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
     };
+  }
+}
+
+export class AppActorSdkLogEvent {
+  constructor(
+    public readonly level: string,
+    public readonly message: string,
+    public readonly category: string,
+    public readonly timestamp: Date | null
+  ) {}
+
+  static fromJson(json: JsonObject): AppActorSdkLogEvent {
+    const rawTimestamp = asString(json.timestamp);
+    const timestamp =
+      rawTimestamp != null && !Number.isNaN(Date.parse(rawTimestamp))
+        ? new Date(rawTimestamp)
+        : null;
+
+    return new AppActorSdkLogEvent(
+      asString(json.level) ?? '',
+      asString(json.message) ?? '',
+      asString(json.category) ?? '',
+      timestamp
+    );
   }
 }
 
@@ -1745,14 +1858,33 @@ type RestorePurchasesOptions = {
   syncWithAppStore?: boolean;
 };
 
-type SearchAdsOptions = {
-  options?: AppActorAsaOptions;
-};
+export type AppActorSearchAdsOptions =
+  | AppActorAsaOptions
+  | {
+      options?: AppActorAsaOptions;
+    };
+
+function resolveSearchAdsOptions(
+  options?: AppActorSearchAdsOptions
+): AppActorAsaOptions {
+  if (options instanceof AppActorAsaOptions) {
+    return options;
+  }
+  return options?.options ?? new AppActorAsaOptions();
+}
 
 export class AppActor {
-  static readonly instance = new AppActor();
+  static readonly instance = new AppActor(APP_ACTOR_SINGLETON_GUARD);
 
   private stagedAsaOptions?: AppActorAsaOptions;
+
+  private constructor(guard: symbol) {
+    if (guard !== APP_ACTOR_SINGLETON_GUARD) {
+      throw new Error(
+        'AppActor cannot be instantiated directly. Use AppActor.instance.'
+      );
+    }
+  }
 
   readonly onCustomerInfoUpdated = new AppActorEventStream(
     'customer_info_updated',
@@ -1774,14 +1906,20 @@ export class AppActor {
     AppActorDeferredPurchaseEvent.fromJson
   );
 
-  enableSearchAdsTracking(options?: SearchAdsOptions): void {
-    this.stagedAsaOptions = options?.options ?? new AppActorAsaOptions();
+  readonly onSdkLog = new AppActorEventStream(
+    'sdk_log',
+    AppActorSdkLogEvent.fromJson
+  );
+
+  enableSearchAdsTracking(options?: AppActorSearchAdsOptions): void {
+    this.stagedAsaOptions = resolveSearchAdsOptions(options);
   }
 
   async configure(
     apiKey: string | AppActorPlatformKeys,
     options: ConfigureOptions = {}
   ): Promise<void> {
+    ensureDebugSdkLogSubscription();
     const resolvedApiKey = resolveApiKey(apiKey);
     const payload: JsonObject = {
       api_key: resolvedApiKey,
@@ -1808,6 +1946,7 @@ export class AppActor {
   async reset(): Promise<void> {
     await execute(METHOD_NAMES.reset);
     this.stagedAsaOptions = undefined;
+    resetDebugSdkLogSubscription();
   }
 
   async sdkVersion(): Promise<string> {
@@ -1985,7 +2124,7 @@ export class AppActor {
     );
   }
 
-  async setAttributes(attributes: Record<string, unknown>): Promise<void> {
+  async setAttributes(attributes: AppActorKeyValueInput): Promise<void> {
     await execute(METHOD_NAMES.setAttributes, {
       attributes: normalizeAttributes(attributes),
     });
@@ -2187,14 +2326,14 @@ export class AppActor {
 
   async presentOfferCodeRedeemSheet(): Promise<void> {
     if (Platform.OS !== 'ios') {
-      throw new Error('presentOfferCodeRedeemSheet is iOS only');
+      throw new UnsupportedError('presentOfferCodeRedeemSheet is iOS only');
     }
     await execute(METHOD_NAMES.presentOfferCodeRedeemSheet);
   }
 
   async getAsaDiagnostics(): Promise<AppActorAsaDiagnostics | null> {
     if (Platform.OS !== 'ios') {
-      throw new Error('getAsaDiagnostics is iOS only');
+      throw new UnsupportedError('getAsaDiagnostics is iOS only');
     }
     const response = await execute(METHOD_NAMES.getAsaDiagnostics);
     if (response.value == null && !('attribution_completed' in response)) {
@@ -2205,7 +2344,9 @@ export class AppActor {
 
   async getPendingAsaPurchaseEventCount(): Promise<number> {
     if (Platform.OS !== 'ios') {
-      throw new Error('getPendingAsaPurchaseEventCount is iOS only');
+      throw new UnsupportedError(
+        'getPendingAsaPurchaseEventCount is iOS only'
+      );
     }
     const response = await execute(METHOD_NAMES.getPendingAsaPurchaseEventCount);
     return asNumber(response.value) ?? 0;
@@ -2213,7 +2354,7 @@ export class AppActor {
 
   async getAsaFirstInstallOnDevice(): Promise<boolean> {
     if (Platform.OS !== 'ios') {
-      throw new Error('getAsaFirstInstallOnDevice is iOS only');
+      throw new UnsupportedError('getAsaFirstInstallOnDevice is iOS only');
     }
     const response = await execute(METHOD_NAMES.getAsaFirstInstallOnDevice);
     return asBoolean(response.value) === true;
@@ -2221,7 +2362,7 @@ export class AppActor {
 
   async getAsaFirstInstallOnAccount(): Promise<boolean> {
     if (Platform.OS !== 'ios') {
-      throw new Error('getAsaFirstInstallOnAccount is iOS only');
+      throw new UnsupportedError('getAsaFirstInstallOnAccount is iOS only');
     }
     const response = await execute(METHOD_NAMES.getAsaFirstInstallOnAccount);
     return asBoolean(response.value) === true;
@@ -2231,7 +2372,7 @@ export class AppActor {
     intent: AppActorPurchaseIntent
   ): Promise<AppActorPurchaseResult> {
     if (Platform.OS !== 'ios') {
-      throw new Error('purchaseFromIntent is iOS only');
+      throw new UnsupportedError('purchaseFromIntent is iOS only');
     }
     const response = await execute(METHOD_NAMES.purchaseFromIntent, {
       intent_id: intent.intentId,

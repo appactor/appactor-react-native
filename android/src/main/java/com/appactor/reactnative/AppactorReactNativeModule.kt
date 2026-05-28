@@ -8,6 +8,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.UiThreadUtil
 import com.facebook.react.modules.core.DeviceEventManagerModule
 
 class AppactorReactNativeModule(
@@ -73,17 +74,19 @@ class AppactorReactNativeModule(
   }
 
   private fun emitEvent(eventName: String, jsonPayload: String) {
-    if (invalidated || !reactApplicationContext.hasActiveReactInstance()) {
-      return
-    }
+    UiThreadUtil.runOnUiThread {
+      if (invalidated || !reactApplicationContext.hasActiveReactInstance()) {
+        return@runOnUiThread
+      }
 
-    val payload = Arguments.createMap().apply {
-      putString("name", eventName)
-      putString("json", jsonPayload)
-    }
+      val payload = Arguments.createMap().apply {
+        putString("name", eventName)
+        putString("json", jsonPayload)
+      }
 
-    reactApplicationContext
-      .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-      .emit("appactor_event", payload)
+      reactApplicationContext
+        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit("appactor_event", payload)
+    }
   }
 }

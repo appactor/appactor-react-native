@@ -6,17 +6,23 @@ import AppActorPlugin
 final class AppactorReactNative: RCTEventEmitter {
     private var hasListeners = false
 
+    private func runOnMainActor(_ block: @escaping @MainActor () -> Void) {
+        Task { @MainActor in
+            block()
+        }
+    }
+
     override init() {
         super.init()
         AppActorPlugin.shared.delegate = self
-        MainActor.assumeIsolated {
+        runOnMainActor {
             AppActorPlugin.shared.startEventListening()
         }
     }
 
     deinit {
         AppActorPlugin.shared.delegate = nil
-        MainActor.assumeIsolated {
+        runOnMainActor {
             AppActorPlugin.shared.stopEventListening()
         }
     }
@@ -31,7 +37,7 @@ final class AppactorReactNative: RCTEventEmitter {
 
     override func startObserving() {
         hasListeners = true
-        MainActor.assumeIsolated {
+        runOnMainActor {
             AppActorPlugin.shared.startEventListening()
         }
     }
@@ -59,13 +65,15 @@ extension AppactorReactNative: AppActorPluginDelegate {
         didReceiveEvent eventName: String,
         withJson jsonString: String
     ) {
-        guard hasListeners else { return }
-        sendEvent(
-            withName: "appactor_event",
-            body: [
-                "name": eventName,
-                "json": jsonString,
-            ]
-        )
+        runOnMainActor { [weak self] in
+            guard let self, self.hasListeners else { return }
+            self.sendEvent(
+                withName: "appactor_event",
+                body: [
+                    "name": eventName,
+                    "json": jsonString,
+                ]
+            )
+        }
     }
 }

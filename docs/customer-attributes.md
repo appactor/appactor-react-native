@@ -19,6 +19,17 @@ await AppActor.instance.setAttributes({
 await AppActor.instance.unsetAttribute('legacy_plan');
 ```
 
+`setAttributes()` accepts either a plain object or any iterable of `[key, value]` entries:
+
+```ts
+await AppActor.instance.setAttributes(
+  new Map([
+    ['plan', 'pro'],
+    ['trial', true],
+  ])
+);
+```
+
 Custom keys must be plain developer keys:
 
 - no empty keys
@@ -123,3 +134,4 @@ Important behavior:
 - `updateAttribution()` is an omit-null partial update API.
 - Direct `updateAttribution()` is not the same thing as explicit clear.
 - Convenience helpers like `setCampaign(null)` are the explicit clear path for helper-managed fields.
+- Attribution metadata can also be supplied as iterable `[key, value]` entries, including `Map`.

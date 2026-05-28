@@ -39,11 +39,16 @@ For day-to-day app runs, `yarn ios` is usually enough after the first successful
 ```tsx
 import {
   AppActor,
+  AppActorAsaOptions,
   AppActorLogLevel,
   AppActorOptions,
 } from 'appactor-react-native';
 
-AppActor.instance.enableSearchAdsTracking();
+// Use the shared singleton instance. Direct construction is intentionally blocked.
+// Optional: pass ASA settings directly, like Flutter's named `options:` payload.
+AppActor.instance.enableSearchAdsTracking(
+  new AppActorAsaOptions(true, false, true)
+);
 
 await AppActor.instance.configure('pk_YOUR_PUBLIC_API_KEY', {
   appUserId: 'user_123',
@@ -82,6 +87,8 @@ The React Native SDK exposes the same major surfaces as Flutter:
   `getRemoteConfigs()`, `getExperimentAssignment()`, `getRemoteConfig()`, `getRemoteConfigBool()`, `getRemoteConfigString()`, `getRemoteConfigNumber()`, `getRemoteConfigInt()`
 - iOS-only helpers:
   `presentOfferCodeRedeemSheet()`, `getAsaDiagnostics()`, `getPendingAsaPurchaseEventCount()`, `getAsaFirstInstallOnDevice()`, `getAsaFirstInstallOnAccount()`, `purchaseFromIntent()`
+- Diagnostics events:
+  `onSdkLog`
 
 ## Purchase Sync Semantics
 
@@ -114,6 +121,13 @@ await AppActor.instance.setAttributes({
   flags: AppActorAttributeValue.boolList([true, false]),
 });
 
+await AppActor.instance.setAttributes(
+  new Map([
+    ['favorite_category', 'watch_faces'],
+    ['trial', true],
+  ])
+);
+
 await AppActor.instance.setEmail('user@example.com');
 await AppActor.instance.setDisplayName('Ada Lovelace');
 await AppActor.instance.setIntegrationIdentifier(
@@ -131,6 +145,7 @@ Important validation rules:
 - Custom keys cannot use `$`, `appactor.`, or `integration.` prefixes.
 - Custom values cannot be `null`; use `unsetAttribute(key)` for deletion.
 - Supported custom values are strings, finite numbers, booleans, flat arrays of those primitives, and `Date` values.
+- Attribute collections can be passed either as plain objects or iterable `[key, value]` entries such as `Map`.
 
 More detail:
 
@@ -157,11 +172,18 @@ const deferredSub = AppActor.instance.onDeferredPurchaseResolved.listen((event) 
   console.log('deferred_purchase_resolved', event.productId);
 });
 
+const sdkLogSub = AppActor.instance.onSdkLog.listen((event) => {
+  console.log('sdk_log', event.level, event.category, event.message);
+});
+
 customerSub.remove();
 receiptSub.remove();
 purchaseIntentSub.remove();
 deferredSub.remove();
+sdkLogSub.remove();
 ```
+
+`sdk_log` entries are also printed automatically in debug builds, matching Flutter's default diagnostics behavior. `onSdkLog` is for advanced tooling and custom inspection; production app flow should not depend on those events.
 
 ## Platform Notes
 

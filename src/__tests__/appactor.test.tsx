@@ -39,7 +39,10 @@ jest.mock('react-native', () => {
 
 import {
   AppActor,
+  AppActorAsaOptions,
   AppActorAttributeValue,
+  AppActorAttribution,
+  AppActorAttributionProvider,
   AppActorConfigValueType,
   AppActorEntitlementInfo,
   AppActorExperimentAssignment,
@@ -48,12 +51,14 @@ import {
   AppActorPackage,
   AppActorPackageType,
   AppActorPlatformKeys,
+  AppActorPurchaseIntent,
   AppActorProductType,
   AppActorPurchaseStatus,
   AppActorRemoteConfigItem,
   AppActorStoreCapability,
   AppActorStore,
   AppActorSubscriptionInfo,
+  UnsupportedError,
 } from '../index';
 import { Platform } from 'react-native';
 
@@ -101,6 +106,25 @@ describe('AppActor React Native', () => {
     );
   });
 
+  it('accepts direct ASA options before configure, like Flutter', async () => {
+    mockExecute.mockResolvedValue(success(null));
+
+    AppActor.instance.enableSearchAdsTracking(
+      new AppActorAsaOptions(false, true, true)
+    );
+    await AppActor.instance.configure('pk_test_123');
+
+    expect(mockExecute).toHaveBeenNthCalledWith(
+      2,
+      'enable_apple_search_ads_tracking',
+      JSON.stringify({
+        auto_track_purchases: false,
+        track_in_sandbox: true,
+        debug_mode: true,
+      })
+    );
+  });
+
   it('selects platform keys for Android and does not run ASA there', async () => {
     (Platform as { OS: string }).OS = 'android';
     mockExecute.mockResolvedValue(success(null));
@@ -117,6 +141,42 @@ describe('AppActor React Native', () => {
         options: {
           platform_info: { flavor: 'react-native', version: '0.1.0' },
         },
+      })
+    );
+  });
+
+  it('rejects platform keys on unsupported platforms with UnsupportedError', async () => {
+    (Platform as { OS: string }).OS = 'windows';
+
+    await expect(
+      AppActor.instance.configure(
+        new AppActorPlatformKeys('pk_ios', 'pk_android')
+      )
+    ).rejects.toBeInstanceOf(UnsupportedError);
+  });
+
+  it('keeps customer info events flowing after reset and reconfigure', async () => {
+    mockExecute.mockResolvedValue(success(null));
+
+    const listener = jest.fn();
+    AppActor.instance.onCustomerInfoUpdated.listen(listener);
+
+    await AppActor.instance.configure('pk_test_123');
+    await AppActor.instance.reset();
+    await AppActor.instance.configure('pk_test_123');
+
+    for (const nativeListener of mockNativeEventListeners) {
+      nativeListener({
+        name: 'customer_info_updated',
+        json: JSON.stringify({
+          app_user_id: 'user_reset_123',
+        }),
+      });
+    }
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appUserId: 'user_reset_123',
       })
     );
   });
@@ -186,6 +246,75 @@ describe('AppActor React Native', () => {
     );
   });
 
+  it('accepts iterable attribute entries like Map', async () => {
+    mockExecute.mockResolvedValue(success(null));
+
+    await AppActor.instance.setAttributes(
+      new Map<string, unknown>([
+        ['plan', 'pro'],
+        ['trial', true],
+        ['last_seen', new Date('2026-05-16T12:00:00.000Z')],
+      ])
+    );
+
+    expect(mockExecute).toHaveBeenCalledWith(
+      'set_attributes',
+      JSON.stringify({
+        attributes: {
+          plan: 'pro',
+          trial: true,
+          last_seen: {
+            value: '2026-05-16T12:00:00.000Z',
+            valueType: 'date',
+          },
+        },
+      })
+    );
+  });
+
+  it('accepts iterable attribution metadata entries like Map', () => {
+    const attribution = new AppActorAttribution(
+      AppActorAttributionProvider.Adjust,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      new Map<string, unknown>([
+        ['campaign_weight', 1.5],
+        ['captured_at', new Date('2026-05-16T12:00:00.000Z')],
+      ])
+    );
+
+    expect(attribution.toJson()).toEqual({
+      provider: 'adjust',
+      metadata: {
+        campaign_weight: 1.5,
+        captured_at: {
+          value: '2026-05-16T12:00:00.000Z',
+          valueType: 'date',
+        },
+      },
+    });
+  });
+
   it('maps transport failures into AppActorError', async () => {
     mockExecute.mockRejectedValue(new Error('bridge exploded'));
 
@@ -221,6 +350,66 @@ describe('AppActor React Native', () => {
         appUserId: 'user_123',
       })
     );
+  });
+
+  it('surfaces sdk_log events for diagnostics listeners', async () => {
+    const listener = jest.fn();
+    AppActor.instance.onSdkLog.listen(listener);
+
+    mockNativeEventListeners[0]?.({
+      name: 'sdk_log',
+      json: JSON.stringify({
+        level: 'debug',
+        message: 'purchase sync finished',
+        category: 'pipeline',
+        timestamp: '2026-05-16T12:00:00.000Z',
+      }),
+    });
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'debug',
+        message: 'purchase sync finished',
+        category: 'pipeline',
+        timestamp: new Date('2026-05-16T12:00:00.000Z'),
+      })
+    );
+  });
+
+  it('prints sdk_log events in debug mode even without a listener', async () => {
+    mockExecute.mockResolvedValue(success(null));
+    const debugSpy = jest.spyOn(console, 'debug').mockImplementation(() => {});
+
+    await AppActor.instance.configure('pk_test_123');
+
+    for (const nativeListener of mockNativeEventListeners) {
+      nativeListener({
+        name: 'sdk_log',
+        json: JSON.stringify({
+          level: 'debug',
+          message: 'purchase sync finished',
+          category: 'pipeline',
+        }),
+      });
+    }
+
+    expect(debugSpy).toHaveBeenCalledWith(
+      '[AppActor/DEBUG] pipeline: purchase sync finished'
+    );
+    debugSpy.mockRestore();
+  });
+
+  it('throws UnsupportedError for iOS-only helpers on Android', async () => {
+    (Platform as { OS: string }).OS = 'android';
+
+    await expect(
+      AppActor.instance.presentOfferCodeRedeemSheet()
+    ).rejects.toBeInstanceOf(UnsupportedError);
+    await expect(
+      AppActor.instance.purchaseFromIntent(
+        new AppActorPurchaseIntent('intent_123', 'product_123')
+      )
+    ).rejects.toBeInstanceOf(UnsupportedError);
   });
 
   it('exposes getRemoteConfigInt only for integral numbers', async () => {
@@ -354,6 +543,15 @@ describe('AppActor React Native', () => {
       AppActor.instance.setCustomIntegrationIdentifier('x'.repeat(65), 'abc')
     ).rejects.toThrow(
       'Integration identifier type can contain at most 64 characters.'
+    );
+  });
+
+  it('blocks direct AppActor instantiation outside the singleton', () => {
+    const AppActorConstructor =
+      AppActor as unknown as new (...args: unknown[]) => AppActor;
+
+    expect(() => new AppActorConstructor()).toThrow(
+      'AppActor cannot be instantiated directly. Use AppActor.instance.'
     );
   });
 });
