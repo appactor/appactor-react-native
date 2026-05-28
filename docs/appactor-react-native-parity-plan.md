@@ -13,7 +13,7 @@ The final delivery is not "a working wrapper". It is "a React Native package tha
 
 ## Current State Snapshot
 
-- The target GitHub repository cloned into this folder is currently empty.
+- The target GitHub repository in this folder is now populated with the React Native package, example app, tests, and release docs under active parity work.
 - Flutter package version is `0.0.16`.
 - Flutter currently pins:
   - iOS pod `AppActorPlugin` `0.1.8`
@@ -286,7 +286,7 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
 - [x] Export `getAsaFirstInstallOnDevice()`.
 - [x] Export `getAsaFirstInstallOnAccount()`.
 - [x] Export `purchaseFromIntent(intent)`.
-- [ ] On non-iOS platforms, reject with explicit unsupported behavior matching Flutter's public contract.
+- [x] On non-iOS platforms, reject with explicit unsupported behavior matching Flutter's public contract.
 
 ### Event surface
 
@@ -294,13 +294,13 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
 - [x] Export `onReceiptPipelineEvent`.
 - [x] Export `onPurchaseIntent`.
 - [x] Export `onDeferredPurchaseResolved`.
-- [ ] Native event transport must keep the same event names:
+- [x] Native event transport must keep the same event names:
   - `customer_info_updated`
   - `receipt_pipeline_event`
   - `purchase_intent_received`
   - `deferred_purchase_resolved`
-- [ ] Debug log events named `sdk_log` should be safely ignored or optionally surfaced only in dev tooling, without breaking app flow.
-- [ ] Unknown native event names should not crash the JS bridge.
+- [x] Debug log events named `sdk_log` should be safely ignored or optionally surfaced only in dev tooling, without breaking app flow.
+- [x] Unknown native event names should not crash the JS bridge.
 
 ## Native Bridge Checklist
 
@@ -464,8 +464,8 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
 
 ## Example App Checklist
 
-- [ ] Create a bare React Native example app using current React Native `0.85.3`.
-- [ ] Example must cover:
+- [x] Create a bare React Native example app using current React Native `0.85.3`.
+- [x] Example must cover:
   - configure
   - sdkVersion
   - getCustomerInfo
@@ -482,12 +482,12 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
   - receipt pipeline event log
   - customer info event log
   - iOS ASA diagnostics and offer code actions where relevant
-- [ ] Example should visibly render important package/customer fields that Flutter example uses.
-- [ ] Example README must include exact setup for:
+- [x] Example should visibly render important package/customer fields that Flutter example uses.
+- [x] Example README must include exact setup for:
   - public API key injection
   - iOS native dependency resolution, if extra Podfile sources or pins are required
   - Android prerequisites
-- [ ] Example should explicitly demonstrate throw vs no-op vs default-return platform behavior where relevant.
+- [x] Example should explicitly demonstrate throw vs no-op vs default-return platform behavior where relevant.
 
 ## Testing Checklist
 
@@ -496,12 +496,12 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
 - [ ] Method-to-wire-name coverage for every exported API.
 - [ ] Payload serialization tests for configure, purchases, attributes, attribution, and remote config helpers.
 - [ ] Validation tests for reserved keys, invalid values, invalid quantity, invalid platform key usage, and null-clearing semantics.
-- [ ] Restore-purchases serialization coverage, especially `syncWithAppStore`.
-- [ ] Event decoding tests for all four event streams.
-- [ ] Event dispatch tests for malformed event payloads and unknown event names.
-- [ ] Bridge-error normalization tests for null response, invalid JSON, native structured error, and raw transport failure cases.
-- [ ] Model parsing/equality/helper tests for offerings, customer info, purchase result, error helpers, verification result, remote configs, experiment assignment, ASA diagnostics, storefront, and deferred purchase event.
-- [ ] Backward-compat alias tests for deprecated/legacy wrapper behavior.
+- [x] Restore-purchases serialization coverage, especially `syncWithAppStore`.
+- [x] Event decoding tests for all four event streams.
+- [x] Event dispatch tests for malformed event payloads and unknown event names.
+- [x] Bridge-error normalization tests for null response, invalid JSON, native structured error, and raw transport failure cases.
+- [x] Model parsing/equality/helper tests for offerings, customer info, purchase result, error helpers, verification result, remote configs, experiment assignment, ASA diagnostics, storefront, and deferred purchase event.
+- [x] Backward-compat alias tests for deprecated/legacy wrapper behavior.
 
 ### Native smoke coverage
 

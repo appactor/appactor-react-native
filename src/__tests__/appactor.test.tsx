@@ -39,11 +39,13 @@ jest.mock('react-native', () => {
 
 import {
   AppActor,
+  AppActorAsaDiagnostics,
   AppActorAsaOptions,
   AppActorAttributeValue,
   AppActorAttribution,
   AppActorAttributionProvider,
   AppActorCustomerInfo,
+  AppActorDeferredPurchaseEvent,
   AppActorError,
   AppActorConfigValueType,
   AppActorEntitlementInfo,
@@ -56,11 +58,14 @@ import {
   AppActorPackageType,
   AppActorPlatformKeys,
   AppActorPurchaseIntent,
+  AppActorPurchaseResult,
   AppActorProductType,
   AppActorPurchaseStatus,
   AppActorRemoteConfigItem,
+  AppActorRemoteConfigs,
   AppActorStoreCapability,
   AppActorStore,
+  AppActorStorefront,
   AppActorSubscriptionInfo,
   AppActorVerificationResult,
   UnsupportedError,
@@ -242,6 +247,24 @@ describe('AppActor React Native', () => {
         package_id: 'monthly',
         quantity: 3,
         placement: 'onboarding_paywall',
+      })
+    );
+  });
+
+  it('serializes restorePurchases with syncWithAppStore when provided', async () => {
+    mockExecute.mockResolvedValue(
+      success({ app_user_id: 'user_restore_123' })
+    );
+
+    const result = await AppActor.instance.restorePurchases({
+      syncWithAppStore: true,
+    });
+
+    expect(result.appUserId).toBe('user_restore_123');
+    expect(mockExecute).toHaveBeenCalledWith(
+      'restore_purchases',
+      JSON.stringify({
+        sync_with_app_store: true,
       })
     );
   });
@@ -492,6 +515,30 @@ describe('AppActor React Native', () => {
     );
   });
 
+  it('dispatches deferred purchase events from the native emitter', async () => {
+    const listener = jest.fn();
+    AppActor.instance.onDeferredPurchaseResolved.listen(listener);
+
+    mockNativeEventListeners[0]?.({
+      name: 'deferred_purchase_resolved',
+      json: JSON.stringify({
+        product_id: 'com.app.monthly',
+        customer_info: {
+          app_user_id: 'user_123',
+        },
+      }),
+    });
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productId: 'com.app.monthly',
+        customerInfo: expect.objectContaining({
+          appUserId: 'user_123',
+        }),
+      })
+    );
+  });
+
   it('drops malformed native events like Flutter', async () => {
     mockExecute.mockResolvedValue(success(null));
 
@@ -518,6 +565,24 @@ describe('AppActor React Native', () => {
     expect(receiptListener).not.toHaveBeenCalled();
     expect(logSpy).not.toHaveBeenCalled();
     logSpy.mockRestore();
+  });
+
+  it('ignores unknown native event names without crashing the bridge', () => {
+    const receiptListener = jest.fn();
+    const customerListener = jest.fn();
+
+    AppActor.instance.onReceiptPipelineEvent.listen(receiptListener);
+    AppActor.instance.onCustomerInfoUpdated.listen(customerListener);
+
+    mockNativeEventListeners[0]?.({
+      name: 'totally_unknown_event',
+      json: JSON.stringify({
+        foo: 'bar',
+      }),
+    });
+
+    expect(receiptListener).not.toHaveBeenCalled();
+    expect(customerListener).not.toHaveBeenCalled();
   });
 
   it('surfaces sdk_log events for diagnostics listeners', async () => {
@@ -723,6 +788,172 @@ describe('AppActor React Native', () => {
     expect(error.scope).toBe('ip');
     expect(error.retryAfterSeconds).toBe(30);
     expect(error.isTransient).toBe(true);
+  });
+
+  it('parses ASA diagnostics, storefront, remote configs, and deferred purchase models', () => {
+    const diagnostics = AppActorAsaDiagnostics.fromJson({
+      attribution_completed: true,
+      pending_purchase_event_count: 2,
+      debug_mode: true,
+      auto_track_purchases: false,
+      track_in_sandbox: true,
+    });
+    const storefront = AppActorStorefront.fromJson({
+      store: 'playStore',
+      country_code: 'TR',
+    });
+    const remoteConfigs = AppActorRemoteConfigs.fromJson({
+      items: [
+        {
+          key: 'headline',
+          value: 'hello',
+          value_type: 'string',
+        },
+      ],
+    });
+    const deferred = AppActorDeferredPurchaseEvent.fromJson({
+      product_id: 'com.app.monthly',
+      customer_info: {
+        app_user_id: 'user_123',
+      },
+    });
+
+    expect(diagnostics).toEqual(
+      expect.objectContaining({
+        attributionCompleted: true,
+        pendingPurchaseEventCount: 2,
+        debugMode: true,
+        autoTrackPurchases: false,
+        trackInSandbox: true,
+      })
+    );
+    expect(storefront).toEqual(
+      expect.objectContaining({
+        store: AppActorStore.PlayStore,
+        countryCode: 'TR',
+      })
+    );
+    expect(remoteConfigs.get('headline')?.stringValue).toBe('hello');
+    expect(deferred).toEqual(
+      expect.objectContaining({
+        productId: 'com.app.monthly',
+        customerInfo: expect.objectContaining({
+          appUserId: 'user_123',
+        }),
+      })
+    );
+  });
+
+  it('parses purchase result helper flags directly', () => {
+    const purchaseResult = AppActorPurchaseResult.fromJson({
+      status: 'restored',
+      customer_info: {
+        app_user_id: 'user_123',
+      },
+      purchase_info: {
+        store: 'appStore',
+        product_id: 'com.app.monthly',
+        transaction_id: 'txn_123',
+        original_transaction_id: 'orig_123',
+        purchase_date: '2026-05-16T12:00:00.000Z',
+        is_sandbox: true,
+      },
+    });
+
+    expect(purchaseResult.status).toBe(AppActorPurchaseStatus.Restored);
+    expect(purchaseResult.isRestored).toBe(true);
+    expect(purchaseResult.isPurchased).toBe(false);
+    expect(purchaseResult.customerInfo?.appUserId).toBe('user_123');
+    expect(purchaseResult.purchaseInfo).toEqual(
+      expect.objectContaining({
+        store: AppActorStore.AppStore,
+        productId: 'com.app.monthly',
+        transactionId: 'txn_123',
+        originalTransactionId: 'orig_123',
+        purchaseDate: '2026-05-16T12:00:00.000Z',
+        isSandbox: true,
+      })
+    );
+  });
+
+  it('parses richer experiment assignment payloads directly', () => {
+    const experiment = AppActorExperimentAssignment.fromJson({
+      experiment_id: 'exp_123',
+      experiment_key: 'pricing_test',
+      variant_id: 'var_b',
+      variant_key: 'B',
+      payload: {
+        paywall: 'annual_first',
+        price_anchor: 59.99,
+      },
+      value_type: 'json',
+      assigned_at: '2026-05-16T12:00:00.000Z',
+    });
+
+    expect(experiment).toEqual(
+      expect.objectContaining({
+        experimentId: 'exp_123',
+        experimentKey: 'pricing_test',
+        variantId: 'var_b',
+        variantKey: 'B',
+        payload: {
+          paywall: 'annual_first',
+          price_anchor: 59.99,
+        },
+        valueType: AppActorConfigValueType.Json,
+        assignedAt: '2026-05-16T12:00:00.000Z',
+      })
+    );
+  });
+
+  it('supports direct equality checks for purchase result and experiment assignment models', () => {
+    const purchaseResultA = AppActorPurchaseResult.fromJson({
+      status: 'success',
+      customer_info: {
+        app_user_id: 'user_123',
+      },
+      purchase_info: {
+        store: 'appStore',
+        product_id: 'com.app.monthly',
+        transaction_id: 'txn_123',
+      },
+    });
+    const purchaseResultB = AppActorPurchaseResult.fromJson({
+      status: 'success',
+      customer_info: {
+        app_user_id: 'user_123',
+      },
+      purchase_info: {
+        store: 'appStore',
+        product_id: 'com.app.monthly',
+        transaction_id: 'txn_123',
+      },
+    });
+    const experimentA = AppActorExperimentAssignment.fromJson({
+      experiment_id: 'exp_123',
+      experiment_key: 'pricing_test',
+      variant_id: 'var_b',
+      variant_key: 'B',
+      payload: {
+        paywall: 'annual_first',
+      },
+      value_type: 'json',
+      assigned_at: '2026-05-16T12:00:00.000Z',
+    });
+    const experimentB = AppActorExperimentAssignment.fromJson({
+      experiment_id: 'exp_123',
+      experiment_key: 'pricing_test',
+      variant_id: 'var_b',
+      variant_key: 'B',
+      payload: {
+        paywall: 'annual_first',
+      },
+      value_type: 'json',
+      assigned_at: '2026-05-16T12:00:00.000Z',
+    });
+
+    expect(purchaseResultA).toEqual(purchaseResultB);
+    expect(experimentA).toEqual(experimentB);
   });
 
   it('parses verification fields on customer info and offerings', () => {

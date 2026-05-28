@@ -199,12 +199,16 @@ sdkLogSub.remove();
 The repo includes a real example app in [`example/`](example) that exercises:
 
 - configure and reset
+- sdk version and identity reads
 - login and logout
 - offerings and customer fetches
 - restore, sync, quiet sync, and queue drain
 - remote config and experiment reads
+- offline entitlement keys and storefront reads
 - purchase flow against current offering packages
-- customer-info and receipt event streams
+- customer-info, receipt, deferred-purchase, and purchase-intent event streams
+- ASA diagnostics, pending ASA helpers, and first-install checks on iOS
+- offer-code redemption and promoted purchase intents on iOS
 
 See [example/README.md](example/README.md) for exact setup steps.
 
