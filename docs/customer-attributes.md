@@ -45,9 +45,9 @@ Supported custom values:
 - string
 - finite number
 - boolean
-- flat string arrays
-- flat number arrays
-- flat boolean arrays
+- flat string lists such as arrays or `Set`
+- flat number lists such as arrays or `Set`
+- flat boolean lists such as arrays or `Set`
 - `Date`
 
 Dates are encoded as:

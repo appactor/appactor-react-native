@@ -144,7 +144,7 @@ Important validation rules:
 - Custom keys cannot exceed 64 characters.
 - Custom keys cannot use `$`, `appactor.`, or `integration.` prefixes.
 - Custom values cannot be `null`; use `unsetAttribute(key)` for deletion.
-- Supported custom values are strings, finite numbers, booleans, flat arrays of those primitives, and `Date` values.
+- Supported custom values are strings, finite numbers, booleans, flat primitive lists such as arrays or `Set`, and `Date` values.
 - Attribute collections can be passed either as plain objects or iterable `[key, value]` entries such as `Map`.
 
 More detail:

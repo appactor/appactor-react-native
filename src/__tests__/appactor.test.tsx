@@ -43,11 +43,15 @@ import {
   AppActorAttributeValue,
   AppActorAttribution,
   AppActorAttributionProvider,
+  AppActorCustomerInfo,
+  AppActorError,
   AppActorConfigValueType,
   AppActorEntitlementInfo,
   AppActorExperimentAssignment,
+  AppActorIntegrationIdentifier,
   AppActorLogLevel,
   AppActorOptions,
+  AppActorOfferings,
   AppActorPackage,
   AppActorPackageType,
   AppActorPlatformKeys,
@@ -58,6 +62,7 @@ import {
   AppActorStoreCapability,
   AppActorStore,
   AppActorSubscriptionInfo,
+  AppActorVerificationResult,
   UnsupportedError,
 } from '../index';
 import { Platform } from 'react-native';
@@ -153,6 +158,25 @@ describe('AppActor React Native', () => {
         new AppActorPlatformKeys('pk_ios', 'pk_android')
       )
     ).rejects.toBeInstanceOf(UnsupportedError);
+  });
+
+  it('forwards empty-string appUserId like Flutter', async () => {
+    mockExecute.mockResolvedValue(success(null));
+
+    await AppActor.instance.configure('pk_test_123', {
+      appUserId: '',
+    });
+
+    expect(mockExecute).toHaveBeenCalledWith(
+      'configure',
+      JSON.stringify({
+        api_key: 'pk_test_123',
+        app_user_id: '',
+        options: {
+          platform_info: { flavor: 'react-native', version: '0.1.0' },
+        },
+      })
+    );
   });
 
   it('keeps customer info events flowing after reset and reconfigure', async () => {
@@ -272,36 +296,31 @@ describe('AppActor React Native', () => {
     );
   });
 
+  it('accepts primitive iterable attribute values like Set', async () => {
+    mockExecute.mockResolvedValue(success(null));
+
+    await AppActor.instance.setAttributes({
+      eligible_products: new Set(['monthly', 'annual']),
+    });
+
+    expect(mockExecute).toHaveBeenCalledWith(
+      'set_attributes',
+      JSON.stringify({
+        attributes: {
+          eligible_products: ['monthly', 'annual'],
+        },
+      })
+    );
+  });
+
   it('accepts iterable attribution metadata entries like Map', () => {
-    const attribution = new AppActorAttribution(
-      AppActorAttributionProvider.Adjust,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      new Map<string, unknown>([
+    const attribution = new AppActorAttribution({
+      provider: AppActorAttributionProvider.Adjust,
+      metadata: new Map<string, unknown>([
         ['campaign_weight', 1.5],
         ['captured_at', new Date('2026-05-16T12:00:00.000Z')],
-      ])
-    );
+      ]),
+    });
 
     expect(attribution.toJson()).toEqual({
       provider: 'adjust',
@@ -313,6 +332,127 @@ describe('AppActor React Native', () => {
         },
       },
     });
+  });
+
+  it('accepts primitive iterable attribution metadata values like Set', () => {
+    const attribution = new AppActorAttribution({
+      provider: AppActorAttributionProvider.Adjust,
+      metadata: {
+        platforms: new Set(['ios', 'android']),
+      },
+    });
+
+    expect(attribution.toJson()).toEqual({
+      provider: 'adjust',
+      metadata: {
+        platforms: ['ios', 'android'],
+      },
+    });
+  });
+
+  it('accepts Flutter-style attribution init objects', () => {
+    const attribution = new AppActorAttribution({
+      provider: AppActorAttributionProvider.AppleSearchAds,
+      campaignName: 'spring_sale',
+      adGroup: 'brand_search',
+      attributedAt: new Date('2026-05-16T12:00:00.000Z'),
+      metadata: {
+        source: 'react-native',
+      },
+    });
+
+    expect(attribution.toJson()).toEqual({
+      provider: 'apple_search_ads',
+      campaign_name: 'spring_sale',
+      ad_group: 'brand_search',
+      attributed_at: '2026-05-16T12:00:00.000Z',
+      metadata: {
+        source: 'react-native',
+      },
+    });
+  });
+
+  it('routes profile helpers through the native bridge', async () => {
+    mockExecute.mockResolvedValue(success(null));
+
+    await AppActor.instance.setEmail('user@example.com');
+    await AppActor.instance.setDisplayName('Ada Lovelace');
+    await AppActor.instance.setPhoneNumber('+15551234567');
+    await AppActor.instance.setPushToken('push-token-123');
+    await AppActor.instance.collectDeviceIdentifiers();
+
+    expect(
+      mockExecute.mock.calls.map((call) => call[0])
+    ).toEqual([
+      'set_email',
+      'set_display_name',
+      'set_phone_number',
+      'set_push_token',
+      'collect_device_identifiers',
+    ]);
+    expect(mockExecute).toHaveBeenNthCalledWith(
+      1,
+      'set_email',
+      JSON.stringify({ email: 'user@example.com' })
+    );
+    expect(mockExecute).toHaveBeenNthCalledWith(
+      2,
+      'set_display_name',
+      JSON.stringify({ display_name: 'Ada Lovelace' })
+    );
+    expect(mockExecute).toHaveBeenNthCalledWith(
+      3,
+      'set_phone_number',
+      JSON.stringify({ phone_number: '+15551234567' })
+    );
+    expect(mockExecute).toHaveBeenNthCalledWith(
+      4,
+      'set_push_token',
+      JSON.stringify({ push_token: 'push-token-123' })
+    );
+    expect(mockExecute).toHaveBeenNthCalledWith(
+      5,
+      'collect_device_identifiers',
+      JSON.stringify({})
+    );
+  });
+
+  it('rejects invalid profile helper values before native dispatch', async () => {
+    await expect(AppActor.instance.setEmail('bad-email')).rejects.toThrow(
+      'Email must be valid.'
+    );
+    await expect(AppActor.instance.setPhoneNumber('abc')).rejects.toThrow(
+      'Phone number must be valid.'
+    );
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('can clear integration identifiers through the native bridge', async () => {
+    mockExecute.mockResolvedValue(success(null));
+
+    await AppActor.instance.unsetIntegrationIdentifier(
+      AppActorIntegrationIdentifier.AdjustId
+    );
+    await AppActor.instance.unsetCustomIntegrationIdentifier(
+      'kochava_device_id'
+    );
+
+    expect(mockExecute).toHaveBeenNthCalledWith(
+      1,
+      'set_integration_identifier',
+      JSON.stringify({
+        type: 'adjust_adid',
+        value: null,
+      })
+    );
+    expect(mockExecute).toHaveBeenNthCalledWith(
+      2,
+      'set_integration_identifier',
+      JSON.stringify({
+        type: 'kochava_device_id',
+        value: null,
+      })
+    );
   });
 
   it('maps transport failures into AppActorError', async () => {
@@ -350,6 +490,34 @@ describe('AppActor React Native', () => {
         appUserId: 'user_123',
       })
     );
+  });
+
+  it('drops malformed native events like Flutter', async () => {
+    mockExecute.mockResolvedValue(success(null));
+
+    const receiptListener = jest.fn();
+    const logSpy = jest.spyOn(console, 'debug').mockImplementation(() => {});
+    const invalidPayloads = ['{', '[]', 'null', '"oops"'];
+
+    AppActor.instance.onReceiptPipelineEvent.listen(receiptListener);
+    await AppActor.instance.configure('pk_test_123');
+
+    for (const nativeListener of mockNativeEventListeners) {
+      for (const invalidPayload of invalidPayloads) {
+        nativeListener({
+          name: 'receipt_pipeline_event',
+          json: invalidPayload,
+        });
+        nativeListener({
+          name: 'sdk_log',
+          json: invalidPayload,
+        });
+      }
+    }
+
+    expect(receiptListener).not.toHaveBeenCalled();
+    expect(logSpy).not.toHaveBeenCalled();
+    logSpy.mockRestore();
   });
 
   it('surfaces sdk_log events for diagnostics listeners', async () => {
@@ -397,6 +565,82 @@ describe('AppActor React Native', () => {
       '[AppActor/DEBUG] pipeline: purchase sync finished'
     );
     debugSpy.mockRestore();
+  });
+
+  it('reads iOS ASA helper values through the native bridge', async () => {
+    mockExecute
+      .mockResolvedValueOnce(success(3))
+      .mockResolvedValueOnce(success(true))
+      .mockResolvedValueOnce(success(false));
+
+    await expect(
+      AppActor.instance.getPendingAsaPurchaseEventCount()
+    ).resolves.toBe(3);
+    await expect(AppActor.instance.getAsaFirstInstallOnDevice()).resolves.toBe(
+      true
+    );
+    await expect(AppActor.instance.getAsaFirstInstallOnAccount()).resolves.toBe(
+      false
+    );
+
+    expect(
+      mockExecute.mock.calls.map((call) => call[0])
+    ).toEqual([
+      'get_pending_asa_purchase_event_count',
+      'get_asa_first_install_on_device',
+      'get_asa_first_install_on_account',
+    ]);
+  });
+
+  it('surfaces purchase-intent events and purchases them on iOS', async () => {
+    mockExecute.mockResolvedValue(
+      success({
+        status: 'success',
+        customer_info: {
+          app_user_id: 'user_123',
+        },
+      })
+    );
+
+    const listener = jest.fn();
+    AppActor.instance.onPurchaseIntent.listen(listener);
+
+    mockNativeEventListeners[0]?.({
+      name: 'purchase_intent_received',
+      json: JSON.stringify({
+        intent_id: 'intent_123',
+        product_id: 'com.app.monthly',
+        offer_id: 'offer_123',
+        offer_type: 'intro7d',
+      }),
+    });
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intentId: 'intent_123',
+        productId: 'com.app.monthly',
+        offerId: 'offer_123',
+        offerType: 'intro7d',
+      })
+    );
+
+    const result = await AppActor.instance.purchaseFromIntent(
+      new AppActorPurchaseIntent(
+        'intent_123',
+        'com.app.monthly',
+        'offer_123',
+        'intro7d'
+      )
+    );
+
+    expect(result.status).toBe(AppActorPurchaseStatus.Purchased);
+    expect(result.customerInfo?.appUserId).toBe('user_123');
+    expect(mockExecute).toHaveBeenCalledWith(
+      'purchase_from_intent',
+      JSON.stringify({
+        intent_id: 'intent_123',
+      })
+    );
   });
 
   it('throws UnsupportedError for iOS-only helpers on Android', async () => {
@@ -463,6 +707,59 @@ describe('AppActor React Native', () => {
         isTransient: true,
       })
     );
+  });
+
+  it('parses enriched error fields', () => {
+    const error = AppActorError.fromJson({
+      code: 2007,
+      message: 'Rate limited',
+      detail: 'httpStatus=429, transient=true',
+      request_id: 'req_abc123',
+      scope: 'ip',
+      retry_after_seconds: 30,
+    });
+
+    expect(error.requestId).toBe('req_abc123');
+    expect(error.scope).toBe('ip');
+    expect(error.retryAfterSeconds).toBe(30);
+    expect(error.isTransient).toBe(true);
+  });
+
+  it('parses verification fields on customer info and offerings', () => {
+    const customerInfo = AppActorCustomerInfo.fromJson({
+      app_user_id: 'user_1',
+      verification: 'verified',
+    });
+    const entitlement = AppActorEntitlementInfo.fromJson({
+      identifier: 'premium',
+      is_active: true,
+      active_promotional_offer_type: 'intro7d',
+      active_promotional_offer_id: 'offer_123',
+    });
+    const offerings = AppActorOfferings.fromJson({
+      all: {},
+      verification: 'verifiedOnDevice',
+    });
+
+    expect(customerInfo.verification).toBe(AppActorVerificationResult.Verified);
+    expect(entitlement.activePromotionalOfferType).toBe('intro7d');
+    expect(entitlement.activePromotionalOfferId).toBe('offer_123');
+    expect(offerings.verification).toBe(
+      AppActorVerificationResult.VerifiedOnDevice
+    );
+  });
+
+  it('parses promotional offer fields on subscription info', () => {
+    const info = AppActorSubscriptionInfo.fromJson({
+      subscription_key: 'sub_1',
+      product_identifier: 'com.app.monthly',
+      is_active: true,
+      active_promotional_offer_type: 'winBack',
+      active_promotional_offer_id: 'offer_456',
+    });
+
+    expect(info.activePromotionalOfferType).toBe('winBack');
+    expect(info.activePromotionalOfferId).toBe('offer_456');
   });
 
   it('accepts Flutter enum-name aliases in decoded payloads', async () => {

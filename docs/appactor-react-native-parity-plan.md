@@ -194,14 +194,14 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
 
 ### Data, cache, store, and diagnostics
 
-- [ ] Export `setFallbackOfferings(rawBytes)`.
+- [x] Export `setFallbackOfferings(rawBytes)`.
 - [ ] Export `getCustomerInfo()`.
 - [ ] Export `getOfferings()`.
 - [ ] Export `activeEntitlementKeysOffline()`.
 - [ ] Export `getCachedOfferings()`.
 - [ ] Export `getCachedRemoteConfigs()`.
 - [ ] Export `getCachedCustomerInfo()`.
-- [ ] Export `canMakePurchases(requiredCapabilities?)`.
+- [x] Export `canMakePurchases(requiredCapabilities?)`.
 - [ ] Export `getStorefront()`.
 - [ ] Export `getStoreCapabilities()`.
 
@@ -236,10 +236,10 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
 
 ### Integration identifiers and attribution
 
-- [ ] Export `setIntegrationIdentifier(type, value)`.
-- [ ] Export `unsetIntegrationIdentifier(type)`.
+- [x] Export `setIntegrationIdentifier(type, value)`.
+- [x] Export `unsetIntegrationIdentifier(type)`.
 - [ ] Export `setCustomIntegrationIdentifier(type, value)`.
-- [ ] Export `unsetCustomIntegrationIdentifier(type)`.
+- [x] Export `unsetCustomIntegrationIdentifier(type)`.
 - [ ] Export helper aliases:
   - `setAppsflyerID`
   - `setAppsFlyerID`
@@ -247,7 +247,7 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
   - `setBranchID`
   - `setFirebaseAppInstanceID`
   - `setOneSignalID`
-- [ ] Export `updateAttribution(attribution)`.
+- [x] Export `updateAttribution(attribution)`.
 - [ ] Preserve Flutter's direct-attribution contract:
   - omitting a field means "do not send that field"
   - direct `updateAttribution()` is not the same thing as explicit clear
@@ -259,7 +259,7 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
   - `setKeyword`
   - `setCreative`
 - [ ] Preserve explicit `null` helper clears on those six convenience methods.
-- [ ] Keep direct `updateAttribution` independent from convenience-helper merge state.
+- [x] Keep direct `updateAttribution` independent from convenience-helper merge state.
 - [ ] Preserve validation for:
   - integration identifier types and values
   - attribution provider override
@@ -280,20 +280,20 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
 
 ### iOS-only APIs
 
-- [ ] Export `presentOfferCodeRedeemSheet()`.
-- [ ] Export `getAsaDiagnostics()`.
-- [ ] Export `getPendingAsaPurchaseEventCount()`.
-- [ ] Export `getAsaFirstInstallOnDevice()`.
-- [ ] Export `getAsaFirstInstallOnAccount()`.
-- [ ] Export `purchaseFromIntent(intent)`.
+- [x] Export `presentOfferCodeRedeemSheet()`.
+- [x] Export `getAsaDiagnostics()`.
+- [x] Export `getPendingAsaPurchaseEventCount()`.
+- [x] Export `getAsaFirstInstallOnDevice()`.
+- [x] Export `getAsaFirstInstallOnAccount()`.
+- [x] Export `purchaseFromIntent(intent)`.
 - [ ] On non-iOS platforms, reject with explicit unsupported behavior matching Flutter's public contract.
 
 ### Event surface
 
-- [ ] Export `onCustomerInfoUpdated`.
-- [ ] Export `onReceiptPipelineEvent`.
-- [ ] Export `onPurchaseIntent`.
-- [ ] Export `onDeferredPurchaseResolved`.
+- [x] Export `onCustomerInfoUpdated`.
+- [x] Export `onReceiptPipelineEvent`.
+- [x] Export `onPurchaseIntent`.
+- [x] Export `onDeferredPurchaseResolved`.
 - [ ] Native event transport must keep the same event names:
   - `customer_info_updated`
   - `receipt_pipeline_event`

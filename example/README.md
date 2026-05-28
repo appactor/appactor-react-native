@@ -56,6 +56,9 @@ yarn android
 - drain receipt queue and refresh customer
 - remote configs and experiment assignment
 - ASA diagnostics on iOS
+- pending ASA helper reads on iOS
+- offer-code redemption on iOS
+- promoted purchase-intent handling on iOS
 - storefront query
 - purchase event logging
 - purchase buttons for the current offering packages

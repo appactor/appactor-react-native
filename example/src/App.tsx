@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import {
   AppActor,
+  AppActorPurchaseIntent,
   AppActorLogLevel,
   AppActorOptions,
   AppActorPackage,
@@ -46,6 +47,14 @@ export default function App() {
   const [storefront, setStorefront] = useState<AppActorStorefront | null>(null);
   const [asaDiagnostics, setAsaDiagnostics] =
     useState<AppActorAsaDiagnostics | null>(null);
+  const [pendingPurchaseIntent, setPendingPurchaseIntent] =
+    useState<AppActorPurchaseIntent | null>(null);
+  const [pendingAsaPurchaseEventCount, setPendingAsaPurchaseEventCount] =
+    useState<number | null>(null);
+  const [asaFirstInstallOnDevice, setAsaFirstInstallOnDevice] =
+    useState<boolean | null>(null);
+  const [asaFirstInstallOnAccount, setAsaFirstInstallOnAccount] =
+    useState<boolean | null>(null);
   const [offlineKeys, setOfflineKeys] = useState<string[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
 
@@ -61,11 +70,18 @@ export default function App() {
       AppActor.instance.onDeferredPurchaseResolved.listen((event) => {
         addLog(`deferred_purchase_resolved: ${event.productId}`);
       });
+    const purchaseIntentSub = AppActor.instance.onPurchaseIntent.listen(
+      (intent) => {
+        setPendingPurchaseIntent(intent);
+        addLog(`purchase_intent_received: ${intent.productId}`);
+      }
+    );
 
     return () => {
       customerSub.remove();
       receiptSub.remove();
       deferredSub.remove();
+      purchaseIntentSub.remove();
     };
   }, []);
 
@@ -177,6 +193,63 @@ export default function App() {
     addLog(next ? 'ASA diagnostics loaded' : 'ASA diagnostics empty');
   }
 
+  async function fetchPendingAsaEvents(): Promise<void> {
+    if (Platform.OS !== 'ios') {
+      Alert.alert('iOS only', 'Pending ASA events are available only on iOS.');
+      return;
+    }
+    const next = await AppActor.instance.getPendingAsaPurchaseEventCount();
+    setPendingAsaPurchaseEventCount(next);
+    addLog(`pending ASA purchase events: ${next}`);
+  }
+
+  async function fetchAsaFirstInstallOnDevice(): Promise<void> {
+    if (Platform.OS !== 'ios') {
+      Alert.alert('iOS only', 'ASA first-install helpers are available only on iOS.');
+      return;
+    }
+    const next = await AppActor.instance.getAsaFirstInstallOnDevice();
+    setAsaFirstInstallOnDevice(next);
+    addLog(`ASA first install on device: ${next}`);
+  }
+
+  async function fetchAsaFirstInstallOnAccount(): Promise<void> {
+    if (Platform.OS !== 'ios') {
+      Alert.alert('iOS only', 'ASA first-install helpers are available only on iOS.');
+      return;
+    }
+    const next = await AppActor.instance.getAsaFirstInstallOnAccount();
+    setAsaFirstInstallOnAccount(next);
+    addLog(`ASA first install on account: ${next}`);
+  }
+
+  async function redeemOfferCode(): Promise<void> {
+    if (Platform.OS !== 'ios') {
+      Alert.alert('iOS only', 'Offer-code redemption is available only on iOS.');
+      return;
+    }
+    await AppActor.instance.presentOfferCodeRedeemSheet();
+    addLog('presentOfferCodeRedeemSheet completed');
+  }
+
+  async function purchasePendingIntent(): Promise<void> {
+    if (Platform.OS !== 'ios') {
+      Alert.alert('iOS only', 'Promoted purchase intents are available only on iOS.');
+      return;
+    }
+    if (!pendingPurchaseIntent) {
+      Alert.alert('No pending intent', 'Wait for a purchase-intent event first.');
+      return;
+    }
+    const result = await AppActor.instance.purchaseFromIntent(
+      pendingPurchaseIntent
+    );
+    if (result.customerInfo) {
+      setCustomerInfo(result.customerInfo);
+    }
+    addLog(`purchaseFromIntent result: ${result.status}`);
+  }
+
   async function purchase(pkg: AppActorPackage): Promise<void> {
     const result: AppActorPurchaseResult = await AppActor.instance.purchasePackage(
       pkg,
@@ -211,6 +284,10 @@ export default function App() {
                 setExperiment(null);
                 setStorefront(null);
                 setAsaDiagnostics(null);
+                setPendingPurchaseIntent(null);
+                setPendingAsaPurchaseEventCount(null);
+                setAsaFirstInstallOnDevice(null);
+                setAsaFirstInstallOnAccount(null);
                 setOfflineKeys([]);
                 addLog('reset completed');
               })
@@ -286,6 +363,35 @@ export default function App() {
             onPress={() => safely('Storefront', fetchStorefront)}
           />
           <Action label="ASA Diagnostics" onPress={() => safely('ASA', fetchAsa)} />
+          <Action
+            label="Pending ASA Event Count"
+            onPress={() => safely('Pending ASA Events', fetchPendingAsaEvents)}
+          />
+          <Action
+            label="ASA First Install On Device"
+            onPress={() =>
+              safely('ASA First Install On Device', fetchAsaFirstInstallOnDevice)
+            }
+          />
+          <Action
+            label="ASA First Install On Account"
+            onPress={() =>
+              safely(
+                'ASA First Install On Account',
+                fetchAsaFirstInstallOnAccount
+              )
+            }
+          />
+          <Action
+            label="Redeem Offer Code"
+            onPress={() => safely('Redeem Offer Code', redeemOfferCode)}
+          />
+          <Action
+            label="Purchase Pending Intent"
+            onPress={() =>
+              safely('Purchase Pending Intent', purchasePendingIntent)
+            }
+          />
         </Section>
 
         <Section title="State">
@@ -295,6 +401,19 @@ export default function App() {
           <JsonValue label="Experiment" value={experiment} />
           <JsonValue label="Storefront" value={storefront} />
           <JsonValue label="ASA Diagnostics" value={asaDiagnostics} />
+          <JsonValue label="Pending Purchase Intent" value={pendingPurchaseIntent} />
+          <JsonValue
+            label="Pending ASA Event Count"
+            value={pendingAsaPurchaseEventCount}
+          />
+          <JsonValue
+            label="ASA First Install On Device"
+            value={asaFirstInstallOnDevice}
+          />
+          <JsonValue
+            label="ASA First Install On Account"
+            value={asaFirstInstallOnAccount}
+          />
           <JsonValue label="Offline Keys" value={offlineKeys} />
         </Section>
 

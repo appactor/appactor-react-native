@@ -428,27 +428,34 @@ function normalizeAttributeValue(
   if (value instanceof Date) {
     return { value: value.toISOString(), valueType: 'date' };
   }
-  if (Array.isArray(value)) {
-    if (value.length > 20) {
-      throw new Error(`${name} arrays can contain at most 20 items.`);
+  const listValue = Array.isArray(value)
+    ? value
+    : isIterable(value)
+      ? Array.from(value)
+      : null;
+  if (listValue) {
+    if (listValue.length > 20) {
+      throw new Error(`${name} lists can contain at most 20 items.`);
     }
-    if (value.every((item) => typeof item === 'string')) {
-      return value;
+    if (listValue.every((item) => typeof item === 'string')) {
+      return listValue;
     }
     if (
-      value.every((item) => typeof item === 'number' && Number.isFinite(item))
+      listValue.every(
+        (item) => typeof item === 'number' && Number.isFinite(item)
+      )
     ) {
-      return value;
+      return listValue;
     }
-    if (value.every((item) => typeof item === 'boolean')) {
-      return value;
+    if (listValue.every((item) => typeof item === 'boolean')) {
+      return listValue;
     }
     throw new Error(
-      `${name} arrays must contain only strings, finite numbers, or booleans.`
+      `${name} lists must contain only strings, finite numbers, or booleans.`
     );
   }
   throw new Error(
-    `${name} must be a string, number, boolean, Date, AppActorAttributeValue, or a flat primitive array.`
+    `${name} must be a string, number, boolean, Date, AppActorAttributeValue, or a flat primitive list.`
   );
 }
 
@@ -495,14 +502,15 @@ function resolveApiKey(
   );
 }
 
-function decodeEventPayload(payload?: string | null): JsonObject {
+function decodeEventPayload(payload?: string | null): JsonObject | null {
   if (!payload) {
-    return {};
+    return null;
   }
   try {
-    return ensureRecord(JSON.parse(payload));
+    const parsed = JSON.parse(payload);
+    return isRecord(parsed) ? parsed : null;
   } catch {
-    return {};
+    return null;
   }
 }
 
@@ -515,6 +523,9 @@ function maybeLogSdkEventInDebug(event: NativeEventEnvelope): void {
     return;
   }
   const payload = decodeEventPayload(event.json);
+  if (!payload) {
+    return;
+  }
   const level = (asString(payload.level) ?? 'info').toUpperCase();
   const category = asString(payload.category) ?? '';
   const message = asString(payload.message) ?? '';
@@ -1008,32 +1019,194 @@ export class AppActorAttributeValue {
 }
 
 export class AppActorAttribution {
+  readonly provider: AppActorAttributionProvider;
+  readonly providerOverride?: string;
+  readonly status?: AppActorAttributionStatus;
+  readonly providerName?: string;
+  readonly campaignId?: string;
+  readonly campaignName?: string;
+  readonly adGroupId?: string;
+  readonly adGroupName?: string;
+  readonly adId?: string;
+  readonly adName?: string;
+  readonly creativeId?: string;
+  readonly creativeName?: string;
+  readonly keywordId?: string;
+  readonly keyword?: string;
+  readonly network?: string;
+  readonly source?: string;
+  readonly medium?: string;
+  readonly campaign?: string;
+  readonly adGroup?: string;
+  readonly ad?: string;
+  readonly creative?: string;
+  readonly clickId?: string;
+  readonly attributedAt?: Date;
+  readonly metadata: AppActorKeyValueInput;
+
+  constructor(options: {
+    provider: AppActorAttributionProvider;
+    providerOverride?: string;
+    status?: AppActorAttributionStatus;
+    providerName?: string;
+    campaignId?: string;
+    campaignName?: string;
+    adGroupId?: string;
+    adGroupName?: string;
+    adId?: string;
+    adName?: string;
+    creativeId?: string;
+    creativeName?: string;
+    keywordId?: string;
+    keyword?: string;
+    network?: string;
+    source?: string;
+    medium?: string;
+    campaign?: string;
+    adGroup?: string;
+    ad?: string;
+    creative?: string;
+    clickId?: string;
+    attributedAt?: Date;
+    metadata?: AppActorKeyValueInput;
+  });
   constructor(
-    public readonly provider: AppActorAttributionProvider,
-    public readonly providerOverride?: string,
-    public readonly status?: AppActorAttributionStatus,
-    public readonly providerName?: string,
-    public readonly campaignId?: string,
-    public readonly campaignName?: string,
-    public readonly adGroupId?: string,
-    public readonly adGroupName?: string,
-    public readonly adId?: string,
-    public readonly adName?: string,
-    public readonly creativeId?: string,
-    public readonly creativeName?: string,
-    public readonly keywordId?: string,
-    public readonly keyword?: string,
-    public readonly network?: string,
-    public readonly source?: string,
-    public readonly medium?: string,
-    public readonly campaign?: string,
-    public readonly adGroup?: string,
-    public readonly ad?: string,
-    public readonly creative?: string,
-    public readonly clickId?: string,
-    public readonly attributedAt?: Date,
-    public readonly metadata: AppActorKeyValueInput = {}
-  ) {}
+    provider: AppActorAttributionProvider,
+    providerOverride?: string,
+    status?: AppActorAttributionStatus,
+    providerName?: string,
+    campaignId?: string,
+    campaignName?: string,
+    adGroupId?: string,
+    adGroupName?: string,
+    adId?: string,
+    adName?: string,
+    creativeId?: string,
+    creativeName?: string,
+    keywordId?: string,
+    keyword?: string,
+    network?: string,
+    source?: string,
+    medium?: string,
+    campaign?: string,
+    adGroup?: string,
+    ad?: string,
+    creative?: string,
+    clickId?: string,
+    attributedAt?: Date,
+    metadata?: AppActorKeyValueInput
+  );
+  constructor(
+    providerOrOptions:
+      | AppActorAttributionProvider
+      | {
+          provider: AppActorAttributionProvider;
+          providerOverride?: string;
+          status?: AppActorAttributionStatus;
+          providerName?: string;
+          campaignId?: string;
+          campaignName?: string;
+          adGroupId?: string;
+          adGroupName?: string;
+          adId?: string;
+          adName?: string;
+          creativeId?: string;
+          creativeName?: string;
+          keywordId?: string;
+          keyword?: string;
+          network?: string;
+          source?: string;
+          medium?: string;
+          campaign?: string;
+          adGroup?: string;
+          ad?: string;
+          creative?: string;
+          clickId?: string;
+          attributedAt?: Date;
+          metadata?: AppActorKeyValueInput;
+        },
+    providerOverride?: string,
+    status?: AppActorAttributionStatus,
+    providerName?: string,
+    campaignId?: string,
+    campaignName?: string,
+    adGroupId?: string,
+    adGroupName?: string,
+    adId?: string,
+    adName?: string,
+    creativeId?: string,
+    creativeName?: string,
+    keywordId?: string,
+    keyword?: string,
+    network?: string,
+    source?: string,
+    medium?: string,
+    campaign?: string,
+    adGroup?: string,
+    ad?: string,
+    creative?: string,
+    clickId?: string,
+    attributedAt?: Date,
+    metadata: AppActorKeyValueInput = {}
+  ) {
+    if (isRecord(providerOrOptions) && typeof providerOrOptions.provider === 'string') {
+      this.provider = providerOrOptions.provider as AppActorAttributionProvider;
+      this.providerOverride = asString(providerOrOptions.providerOverride);
+      this.status = providerOrOptions.status as
+        | AppActorAttributionStatus
+        | undefined;
+      this.providerName = asString(providerOrOptions.providerName);
+      this.campaignId = asString(providerOrOptions.campaignId);
+      this.campaignName = asString(providerOrOptions.campaignName);
+      this.adGroupId = asString(providerOrOptions.adGroupId);
+      this.adGroupName = asString(providerOrOptions.adGroupName);
+      this.adId = asString(providerOrOptions.adId);
+      this.adName = asString(providerOrOptions.adName);
+      this.creativeId = asString(providerOrOptions.creativeId);
+      this.creativeName = asString(providerOrOptions.creativeName);
+      this.keywordId = asString(providerOrOptions.keywordId);
+      this.keyword = asString(providerOrOptions.keyword);
+      this.network = asString(providerOrOptions.network);
+      this.source = asString(providerOrOptions.source);
+      this.medium = asString(providerOrOptions.medium);
+      this.campaign = asString(providerOrOptions.campaign);
+      this.adGroup = asString(providerOrOptions.adGroup);
+      this.ad = asString(providerOrOptions.ad);
+      this.creative = asString(providerOrOptions.creative);
+      this.clickId = asString(providerOrOptions.clickId);
+      this.attributedAt =
+        providerOrOptions.attributedAt instanceof Date
+          ? providerOrOptions.attributedAt
+          : undefined;
+      this.metadata = providerOrOptions.metadata ?? {};
+      return;
+    }
+
+    this.provider = providerOrOptions as AppActorAttributionProvider;
+    this.providerOverride = providerOverride;
+    this.status = status;
+    this.providerName = providerName;
+    this.campaignId = campaignId;
+    this.campaignName = campaignName;
+    this.adGroupId = adGroupId;
+    this.adGroupName = adGroupName;
+    this.adId = adId;
+    this.adName = adName;
+    this.creativeId = creativeId;
+    this.creativeName = creativeName;
+    this.keywordId = keywordId;
+    this.keyword = keyword;
+    this.network = network;
+    this.source = source;
+    this.medium = medium;
+    this.campaign = campaign;
+    this.adGroup = adGroup;
+    this.ad = ad;
+    this.creative = creative;
+    this.clickId = clickId;
+    this.attributedAt = attributedAt;
+    this.metadata = metadata;
+  }
 
   static customProvider(
     provider: string,
@@ -1062,32 +1235,11 @@ export class AppActorAttribution {
       metadata?: AppActorKeyValueInput;
     } = {}
   ): AppActorAttribution {
-    return new AppActorAttribution(
-      AppActorAttributionProvider.Custom,
-      provider,
-      options.status,
-      options.providerName,
-      options.campaignId,
-      options.campaignName,
-      options.adGroupId,
-      options.adGroupName,
-      options.adId,
-      options.adName,
-      options.creativeId,
-      options.creativeName,
-      options.keywordId,
-      options.keyword,
-      options.network,
-      options.source,
-      options.medium,
-      options.campaign,
-      options.adGroup,
-      options.ad,
-      options.creative,
-      options.clickId,
-      options.attributedAt,
-      options.metadata ?? {}
-    );
+    return new AppActorAttribution({
+      provider: AppActorAttributionProvider.Custom,
+      providerOverride: provider,
+      ...options,
+    });
   }
 
   toJson(): JsonObject {
@@ -1829,6 +1981,9 @@ class AppActorEventStream<T> {
           return;
         }
         const payload = decodeEventPayload(event.json);
+        if (!payload) {
+          return;
+        }
         listener(this.decoder(payload));
       }
     );
@@ -1923,7 +2078,9 @@ export class AppActor {
     const resolvedApiKey = resolveApiKey(apiKey);
     const payload: JsonObject = {
       api_key: resolvedApiKey,
-      ...(options.appUserId ? { app_user_id: options.appUserId } : {}),
+      ...(options.appUserId !== undefined
+        ? { app_user_id: options.appUserId }
+        : {}),
       options: {
         ...(options.options?.toJson() ?? {}),
         platform_info: {
