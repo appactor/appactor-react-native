@@ -169,7 +169,8 @@ deferredSub.remove();
 - Call `enableInstallReferrer()` after `configure()` on Android if you want Google Play Install Referrer collection.
 - `getAppUserId()` returns `null` before configure, and `getIsAnonymous()` returns `true`.
 - iOS-only APIs throw on non-iOS platforms.
-- `getStorefront()` returns `null` on Android, matching the Flutter contract.
+- `getStorefront()` returns `null` on iOS and only queries the native store on Android, matching the current Flutter contract.
+- Promoted purchase intents and `purchaseFromIntent()` require iOS `16.4+`.
 
 ## Example App
 

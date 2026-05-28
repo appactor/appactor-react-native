@@ -30,7 +30,7 @@ apply plugin: 'kotlin-android'
 apply plugin: 'com.facebook.react'
 
 android {
-  namespace 'com.appactor.reactnative'
+  namespace = 'com.appactor.reactnative'
   compileSdkVersion getExtOrDefault('compileSdkVersion')
 
   defaultConfig {
@@ -39,7 +39,7 @@ android {
   }
 
   buildFeatures {
-    buildConfig true
+    buildConfig = true
   }
 
   buildTypes {

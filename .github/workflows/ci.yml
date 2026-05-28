@@ -160,7 +160,11 @@ jobs:
           bundle exec pod repo update --verbose
           bundle exec pod install --project-directory=ios
 
+      - name: Validate podspec metadata
+        run: |
+          cd example
+          bundle exec pod spec lint ../AppactorReactNative.podspec --quick --allow-warnings
+
       - name: Build example for iOS
         run: |
           yarn turbo run build:ios --cache-dir="${{ env.TURBO_CACHE_DIR }}"
-

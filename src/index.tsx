@@ -291,12 +291,22 @@ function validateIntegrationIdentifierType(type: string): void {
       'Integration identifier type must not be empty or padded with whitespace.'
     );
   }
-  if (byteLength(type) > 128) {
-    throw new Error('Integration identifier type must be at most 128 bytes.');
+  if (type.length > 64) {
+    throw new Error(
+      'Integration identifier type can contain at most 64 characters.'
+    );
   }
   if (!/^[A-Za-z0-9_.:-]+$/.test(type)) {
     throw new Error(
       'Integration identifier type may only contain letters, numbers, underscore, dot, colon, or dash.'
+    );
+  }
+  if (type.startsWith('$')) {
+    throw new Error('Integration identifier type cannot start with "$".');
+  }
+  if (type.toLowerCase().startsWith('appactor.')) {
+    throw new Error(
+      'Integration identifier type cannot start with "appactor.".'
     );
   }
 }
@@ -638,7 +648,11 @@ function parseStore(value: unknown): AppActorStore {
   return fromEnumValue(
     Object.values(AppActorStore),
     value,
-    AppActorStore.Unknown
+    AppActorStore.Unknown,
+    {
+      playStore: AppActorStore.PlayStore,
+      appStore: AppActorStore.AppStore,
+    }
   );
 }
 
@@ -662,7 +676,10 @@ function parseProductType(value: unknown): AppActorProductType {
   return fromEnumValue(
     Object.values(AppActorProductType),
     value,
-    AppActorProductType.Unknown
+    AppActorProductType.Unknown,
+    {
+      nonConsumable: AppActorProductType.NonConsumable,
+    }
   );
 }
 
@@ -670,7 +687,10 @@ function parseOwnershipType(value: unknown): AppActorOwnershipType {
   return fromEnumValue(
     Object.values(AppActorOwnershipType),
     value,
-    AppActorOwnershipType.Unknown
+    AppActorOwnershipType.Unknown,
+    {
+      familyShared: AppActorOwnershipType.FamilyShared,
+    }
   );
 }
 
@@ -678,7 +698,12 @@ function parsePeriodType(value: unknown): AppActorPeriodType {
   return fromEnumValue(
     Object.values(AppActorPeriodType),
     value,
-    AppActorPeriodType.Unknown
+    AppActorPeriodType.Unknown,
+    {
+      twoMonth: AppActorPeriodType.TwoMonth,
+      threeMonth: AppActorPeriodType.ThreeMonth,
+      sixMonth: AppActorPeriodType.SixMonth,
+    }
   );
 }
 
@@ -686,7 +711,11 @@ function parseSubscriptionStatus(value: unknown): AppActorSubscriptionStatus {
   return fromEnumValue(
     Object.values(AppActorSubscriptionStatus),
     value,
-    AppActorSubscriptionStatus.Unknown
+    AppActorSubscriptionStatus.Unknown,
+    {
+      gracePeriod: AppActorSubscriptionStatus.GracePeriod,
+      billingRetry: AppActorSubscriptionStatus.BillingRetry,
+    }
   );
 }
 
@@ -694,7 +723,11 @@ function parseCancellationReason(value: unknown): AppActorCancellationReason {
   return fromEnumValue(
     Object.values(AppActorCancellationReason),
     value,
-    AppActorCancellationReason.Unknown
+    AppActorCancellationReason.Unknown,
+    {
+      customerCancelled: AppActorCancellationReason.CustomerCancelled,
+      developerCancelled: AppActorCancellationReason.DeveloperCancelled,
+    }
   );
 }
 
@@ -707,12 +740,16 @@ function parseConfigValueType(value: unknown): AppActorConfigValueType {
 }
 
 function parseStoreCapability(value: unknown): AppActorStoreCapability | null {
-  return typeof value === 'string' &&
-    Object.values(AppActorStoreCapability).includes(
-      value as AppActorStoreCapability
-    )
-    ? (value as AppActorStoreCapability)
-    : null;
+  const parsed = fromEnumValue(
+    Object.values(AppActorStoreCapability),
+    value,
+    '' as AppActorStoreCapability,
+    {
+      inAppProducts: AppActorStoreCapability.InAppProducts,
+      purchaseHistory: AppActorStoreCapability.PurchaseHistory,
+    }
+  );
+  return parsed || null;
 }
 
 function parsePurchaseStatus(value: unknown): AppActorPurchaseStatus {
@@ -1070,7 +1107,7 @@ export class AppActorExperimentAssignment {
       asString(json.variant_id) ?? '',
       asString(json.variant_key) ?? '',
       json.payload,
-      parseConfigValueType(json.value_type),
+      parseConfigValueType(json.value_type ?? 'string'),
       asString(json.assigned_at) ?? ''
     );
   }
@@ -1621,7 +1658,7 @@ export class AppActorRemoteConfigItem {
     return new AppActorRemoteConfigItem(
       asString(json.key) ?? '',
       json.value,
-      parseConfigValueType(json.value_type)
+      parseConfigValueType(json.value_type ?? 'string')
     );
   }
 }

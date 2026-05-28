@@ -13,7 +13,7 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
 class AppactorReactNativeModule(
   reactContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(reactContext), LifecycleEventListener {
-  private var destroyed = false
+  private var invalidated = false
 
   init {
     reactApplicationContext.addLifecycleEventListener(this)
@@ -45,11 +45,11 @@ class AppactorReactNativeModule(
   }
 
   override fun onHostDestroy() {
-    destroyed = true
     AppActorPlugin.setActivity(null)
   }
 
   override fun invalidate() {
+    invalidated = true
     reactApplicationContext.removeLifecycleEventListener(this)
     AppActorPlugin.eventListener = null
     AppActorPlugin.stopEventListening()
@@ -57,12 +57,23 @@ class AppactorReactNativeModule(
     super.invalidate()
   }
 
+  @ReactMethod
+  fun addListener(eventName: String) {
+    // NativeEventEmitter requires these hooks on the backing module even when
+    // the actual event routing is handled through the shared device emitter.
+  }
+
+  @ReactMethod
+  fun removeListeners(count: Double) {
+    // Intentionally a no-op: AppActorPlugin manages its own native listeners.
+  }
+
   private fun syncCurrentActivity() {
     AppActorPlugin.setActivity(reactApplicationContext.currentActivity)
   }
 
   private fun emitEvent(eventName: String, jsonPayload: String) {
-    if (destroyed || !reactApplicationContext.hasActiveReactInstance()) {
+    if (invalidated || !reactApplicationContext.hasActiveReactInstance()) {
       return
     }
 

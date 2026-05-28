@@ -29,7 +29,7 @@ const EXAMPLE_API_KEY = 'pk_YOUR_PUBLIC_API_KEY';
 The first install should refresh CocoaPods specs so `AppActorPlugin 0.1.8` resolves correctly:
 
 ```sh
-cd ios
+cd example/ios
 pod install --repo-update
 cd ..
 yarn ios
@@ -40,6 +40,7 @@ yarn ios
 Make sure a JDK is installed and available on `PATH`, then run:
 
 ```sh
+cd example
 yarn android
 ```
 

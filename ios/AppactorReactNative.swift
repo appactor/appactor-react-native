@@ -9,20 +9,20 @@ final class AppactorReactNative: RCTEventEmitter {
     override init() {
         super.init()
         AppActorPlugin.shared.delegate = self
-        Task { @MainActor in
+        MainActor.assumeIsolated {
             AppActorPlugin.shared.startEventListening()
         }
     }
 
     deinit {
         AppActorPlugin.shared.delegate = nil
-        Task { @MainActor in
+        MainActor.assumeIsolated {
             AppActorPlugin.shared.stopEventListening()
         }
     }
 
     override static func requiresMainQueueSetup() -> Bool {
-        false
+        true
     }
 
     override func supportedEvents() -> [String]! {
@@ -31,7 +31,7 @@ final class AppactorReactNative: RCTEventEmitter {
 
     override func startObserving() {
         hasListeners = true
-        Task { @MainActor in
+        MainActor.assumeIsolated {
             AppActorPlugin.shared.startEventListening()
         }
     }

@@ -1,5 +1,16 @@
 require 'json'
 
+unless defined?(install_modules_dependencies)
+  begin
+    require Pod::Executable.execute_command('node', ['-p',
+      'require.resolve(
+        "react-native/scripts/react_native_pods.rb",
+        {paths: [process.argv[1]]},
+      )', __dir__]).strip
+  rescue
+  end
+end
+
 package = JSON.parse(File.read(File.join(__dir__, 'package.json')))
 ios_version = defined?(min_ios_version_supported) ? min_ios_version_supported : '15.1'
 
@@ -24,6 +35,6 @@ Pod::Spec.new do |s|
   if defined?(install_modules_dependencies)
     install_modules_dependencies(s)
   else
-    s.dependency 'React-Core'
+    Pod::UI.warn('AppactorReactNative: install_modules_dependencies is unavailable; skipping React Native pod wiring during standalone podspec lint.')
   end
 end

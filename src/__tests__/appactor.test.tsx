@@ -40,6 +40,9 @@ jest.mock('react-native', () => {
 import {
   AppActor,
   AppActorAttributeValue,
+  AppActorConfigValueType,
+  AppActorEntitlementInfo,
+  AppActorExperimentAssignment,
   AppActorLogLevel,
   AppActorOptions,
   AppActorPackage,
@@ -47,7 +50,10 @@ import {
   AppActorPlatformKeys,
   AppActorProductType,
   AppActorPurchaseStatus,
+  AppActorRemoteConfigItem,
+  AppActorStoreCapability,
   AppActorStore,
+  AppActorSubscriptionInfo,
 } from '../index';
 import { Platform } from 'react-native';
 
@@ -267,6 +273,87 @@ describe('AppActor React Native', () => {
         message: 'Network error',
         isTransient: true,
       })
+    );
+  });
+
+  it('accepts Flutter enum-name aliases in decoded payloads', async () => {
+    const pkg = AppActorPackage.fromJson({
+      id: 'monthly',
+      package_type: 'twoMonth',
+      product_id: 'com.app.monthly',
+      product_type: 'nonConsumable',
+      store: 'playStore',
+    });
+    const entitlement = AppActorEntitlementInfo.fromJson({
+      identifier: 'premium',
+      is_active: true,
+      ownership_type: 'familyShared',
+      period_type: 'twoMonth',
+      subscription_status: 'gracePeriod',
+      store: 'playStore',
+      cancellation_reason: 'customerCancelled',
+    });
+    const subscription = AppActorSubscriptionInfo.fromJson({
+      subscription_key: 'premium_monthly',
+      product_identifier: 'com.app.monthly',
+      store: 'playStore',
+      period_type: 'sixMonth',
+      cancellation_reason: 'developerCancelled',
+    });
+
+    (Platform as { OS: string }).OS = 'android';
+    mockExecute.mockResolvedValue(
+      success({ value: ['inAppProducts', 'purchaseHistory'] })
+    );
+    const capabilities = await AppActor.instance.getStoreCapabilities();
+
+    expect(pkg.packageType).toBe(AppActorPackageType.TwoMonth);
+    expect(pkg.productType).toBe(AppActorProductType.NonConsumable);
+    expect(pkg.store).toBe(AppActorStore.PlayStore);
+    expect(entitlement.ownershipType).toBe('family_shared');
+    expect(entitlement.periodType).toBe('two_month');
+    expect(entitlement.subscriptionStatus).toBe('grace_period');
+    expect(entitlement.store).toBe(AppActorStore.PlayStore);
+    expect(entitlement.cancellationReason).toBe('customer_cancelled');
+    expect(subscription.store).toBe(AppActorStore.PlayStore);
+    expect(subscription.periodType).toBe('six_month');
+    expect(subscription.cancellationReason).toBe('developer_cancelled');
+    expect(capabilities).toEqual(
+      new Set([
+        AppActorStoreCapability.InAppProducts,
+        AppActorStoreCapability.PurchaseHistory,
+      ])
+    );
+  });
+
+  it('defaults missing value_type fields to string like Flutter', () => {
+    const experiment = AppActorExperimentAssignment.fromJson({
+      experiment_id: 'exp_123',
+      experiment_key: 'pricing_test',
+      variant_id: 'var_b',
+      variant_key: 'B',
+      payload: 'hero_copy',
+    });
+    const remoteConfig = AppActorRemoteConfigItem.fromJson({
+      key: 'headline',
+      value: 'hello',
+    });
+
+    expect(experiment.valueType).toBe(AppActorConfigValueType.String);
+    expect(remoteConfig.valueType).toBe(AppActorConfigValueType.String);
+  });
+
+  it('matches Flutter validation for custom integration identifier types', async () => {
+    await expect(
+      AppActor.instance.setCustomIntegrationIdentifier('appactor.foo', 'abc')
+    ).rejects.toThrow(
+      'Integration identifier type cannot start with "appactor.".'
+    );
+
+    await expect(
+      AppActor.instance.setCustomIntegrationIdentifier('x'.repeat(65), 'abc')
+    ).rejects.toThrow(
+      'Integration identifier type can contain at most 64 characters.'
     );
   });
 });
