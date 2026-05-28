@@ -198,10 +198,12 @@ sdkLogSub.remove();
 
 The repo includes a real example app in [`example/`](example) that exercises:
 
-- configure and reset
+- auto-bootstrap configure, reset, and full snapshot refresh
 - sdk version and identity reads
 - login and logout
+- attribution snapshot and nullable helper clear
 - offerings and customer fetches
+- structured customer/offering/config/ASA summaries plus raw JSON inspection
 - restore, sync, quiet sync, and queue drain
 - remote config and experiment reads
 - offline entitlement keys and storefront reads

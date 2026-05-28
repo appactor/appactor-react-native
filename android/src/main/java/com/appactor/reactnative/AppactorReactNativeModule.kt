@@ -32,7 +32,9 @@ class AppactorReactNativeModule(
   fun execute(method: String, payload: String, promise: Promise) {
     syncCurrentActivity()
     AppActorPlugin.execute(method, payload) { response ->
-      promise.resolve(response)
+      UiThreadUtil.runOnUiThread {
+        promise.resolve(response)
+      }
     }
   }
 

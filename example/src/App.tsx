@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import {
   AppActor,
+  AppActorAttribution,
+  AppActorAttributionProvider,
   AppActorPurchaseIntent,
   AppActorLogLevel,
   AppActorOptions,
@@ -26,6 +28,10 @@ import {
 
 const EXAMPLE_API_KEY = 'pk_YOUR_PUBLIC_API_KEY';
 
+function hasConfiguredExampleKey(): boolean {
+  return EXAMPLE_API_KEY !== 'pk_YOUR_PUBLIC_API_KEY';
+}
+
 function formatJson(value: unknown): string {
   return JSON.stringify(
     value,
@@ -35,7 +41,13 @@ function formatJson(value: unknown): string {
 }
 
 export default function App() {
+  const didBootstrap = useRef(false);
   const [sdkVersion, setSdkVersion] = useState<string>('not configured');
+  const [appUserId, setAppUserId] = useState<string | null>(null);
+  const [isAnonymous, setIsAnonymous] = useState<boolean | null>(null);
+  const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [customerInfo, setCustomerInfo] = useState<AppActorCustomerInfo | null>(
     null
   );
@@ -77,6 +89,15 @@ export default function App() {
       }
     );
 
+    if (!didBootstrap.current) {
+      didBootstrap.current = true;
+      if (hasConfiguredExampleKey()) {
+        void safely('Configure', configure);
+      } else {
+        addLog('Set EXAMPLE_API_KEY, then tap Configure.');
+      }
+    }
+
     return () => {
       customerSub.remove();
       receiptSub.remove();
@@ -90,16 +111,24 @@ export default function App() {
   }
 
   async function safely(label: string, action: () => Promise<void>) {
+    setLoading(true);
+    setErrorMessage(null);
     try {
       await action();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      setErrorMessage(message);
       addLog(`${label}: ${message}`);
       Alert.alert(label, message);
+    } finally {
+      setLoading(false);
     }
   }
 
   async function configure(): Promise<void> {
+    if (!hasConfiguredExampleKey()) {
+      throw new Error('Set EXAMPLE_API_KEY before configuring the SDK.');
+    }
     AppActor.instance.enableSearchAdsTracking();
     await AppActor.instance.configure(EXAMPLE_API_KEY, {
       options: new AppActorOptions(AppActorLogLevel.Debug),
@@ -107,7 +136,57 @@ export default function App() {
     await AppActor.instance.enableInstallReferrer();
     const version = await AppActor.instance.sdkVersion();
     setSdkVersion(version);
+    setReady(true);
+    await refreshAll();
     addLog(`SDK ready after bootstrap: ${version}`);
+  }
+
+  async function refreshAll(): Promise<void> {
+    const [
+      info,
+      nextOfferings,
+      nextRemoteConfigs,
+      nextExperiment,
+      keys,
+      nextStorefront,
+      nextAppUserId,
+      nextIsAnonymous,
+    ] = await Promise.all([
+      AppActor.instance.getCustomerInfo(),
+      AppActor.instance.getOfferings(),
+      AppActor.instance.getRemoteConfigs(),
+      AppActor.instance.getExperimentAssignment('pricing_test'),
+      AppActor.instance.activeEntitlementKeysOffline(),
+      AppActor.instance.getStorefront(),
+      AppActor.instance.getAppUserId(),
+      AppActor.instance.getIsAnonymous(),
+    ]);
+
+    setCustomerInfo(info);
+    setOfferings(nextOfferings);
+    setRemoteConfigs(nextRemoteConfigs);
+    setExperiment(nextExperiment);
+    setOfflineKeys([...keys]);
+    setStorefront(nextStorefront);
+    setAppUserId(nextAppUserId);
+    setIsAnonymous(nextIsAnonymous);
+
+    if (Platform.OS === 'ios') {
+      const [asa, pendingCount, firstDevice, firstAccount] = await Promise.all([
+        AppActor.instance.getAsaDiagnostics(),
+        AppActor.instance.getPendingAsaPurchaseEventCount(),
+        AppActor.instance.getAsaFirstInstallOnDevice(),
+        AppActor.instance.getAsaFirstInstallOnAccount(),
+      ]);
+      setAsaDiagnostics(asa);
+      setPendingAsaPurchaseEventCount(pendingCount);
+      setAsaFirstInstallOnDevice(firstDevice);
+      setAsaFirstInstallOnAccount(firstAccount);
+    }
+
+    addLog(
+      `snapshot refreshed: ${Object.keys(nextOfferings.all).length} offerings, ${nextRemoteConfigs.items.length} configs`
+    );
   }
 
   async function refreshCustomer(): Promise<void> {
@@ -151,12 +230,46 @@ export default function App() {
   async function login(): Promise<void> {
     const info = await AppActor.instance.logIn('react_native_demo_user');
     setCustomerInfo(info);
+    setAppUserId(info.appUserId ?? null);
+    setIsAnonymous(false);
     addLog('logIn completed');
   }
 
   async function logout(): Promise<void> {
-    await AppActor.instance.logOut();
+    const anonymous = await AppActor.instance.logOut();
+    setCustomerInfo(null);
+    setAppUserId(null);
+    setIsAnonymous(anonymous);
     addLog('logOut completed');
+  }
+
+  async function refreshIdentity(): Promise<void> {
+    const [nextAppUserId, nextIsAnonymous] = await Promise.all([
+      AppActor.instance.getAppUserId(),
+      AppActor.instance.getIsAnonymous(),
+    ]);
+    setAppUserId(nextAppUserId);
+    setIsAnonymous(nextIsAnonymous);
+    addLog(
+      `identity: ${nextAppUserId ?? 'anonymous'} (${nextIsAnonymous ? 'anonymous' : 'identified'})`
+    );
+  }
+
+  async function sendAttribution(): Promise<void> {
+    await AppActor.instance.updateAttribution(
+      new AppActorAttribution({
+        provider: AppActorAttributionProvider.Custom,
+        providerOverride: 'example_campaigns',
+        campaign: 'spring_sale',
+        source: 'react_native_example',
+        metadata: {
+          screen: 'example_home',
+        },
+      })
+    );
+    await AppActor.instance.setMediaSource('react_native_example');
+    await AppActor.instance.setCampaign(null);
+    addLog('attribution updated and campaign helper cleared');
   }
 
   async function fetchRemoteConfigs(): Promise<void> {
@@ -266,18 +379,31 @@ export default function App() {
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>AppActor React Native Example</Text>
         <Text style={styles.subtitle}>
-          Configure the SDK, fetch offerings/customer info, and exercise
-          purchase-related flows.
+          Configure once, refresh the full SDK snapshot, and exercise the same
+          purchase, config, attribution, identity, and diagnostics flows as the
+          native SDKs.
         </Text>
+
+        <Section title="SDK Snapshot">
+          <Value label="Ready" value={ready} />
+          <Value label="Loading" value={loading} />
+          <Value label="SDK Version" value={sdkVersion} />
+          <Value label="Last Error" value={errorMessage ?? 'none'} />
+        </Section>
 
         <Section title="Lifecycle">
           <Action label="Configure" onPress={() => safely('Configure', configure)} />
+          <Action label="Refresh All" onPress={() => safely('Refresh All', refreshAll)} />
           <Action
             label="Reset"
             onPress={() =>
               safely('Reset', async () => {
                 await AppActor.instance.reset();
                 setSdkVersion('reset');
+                setAppUserId(null);
+                setIsAnonymous(null);
+                setReady(false);
+                setErrorMessage(null);
                 setCustomerInfo(null);
                 setOfferings(null);
                 setRemoteConfigs(null);
@@ -308,9 +434,26 @@ export default function App() {
           <Action label="Log In" onPress={() => safely('Log In', login)} />
           <Action label="Log Out" onPress={() => safely('Log Out', logout)} />
           <Action
+            label="Refresh Identity"
+            onPress={() => safely('Refresh Identity', refreshIdentity)}
+          />
+          <Action
             label="Refresh Customer"
             onPress={() => safely('Get Customer Info', refreshCustomer)}
           />
+          <Value label="App User ID" value={appUserId ?? 'none'} />
+          <Value label="Anonymous" value={isAnonymous ?? 'unknown'} />
+        </Section>
+
+        <Section title="Attribution">
+          <Action
+            label="Send Demo Attribution"
+            onPress={() => safely('Attribution', sendAttribution)}
+          />
+          <Text style={styles.empty}>
+            Sends a direct attribution snapshot, then demonstrates a nullable
+            campaign helper clear.
+          </Text>
         </Section>
 
         <Section title="Commerce">
@@ -395,26 +538,24 @@ export default function App() {
         </Section>
 
         <Section title="State">
-          <JsonValue label="CustomerInfo" value={customerInfo} />
-          <JsonValue label="Offerings" value={offerings} />
-          <JsonValue label="RemoteConfigs" value={remoteConfigs} />
-          <JsonValue label="Experiment" value={experiment} />
-          <JsonValue label="Storefront" value={storefront} />
-          <JsonValue label="ASA Diagnostics" value={asaDiagnostics} />
+          <CustomerSummary info={customerInfo} />
+          <OfferingsSummary offerings={offerings} />
+          <ConfigSummary
+            remoteConfigs={remoteConfigs}
+            experiment={experiment}
+            storefront={storefront}
+            offlineKeys={offlineKeys}
+          />
+          <IosSummary
+            asaDiagnostics={asaDiagnostics}
+            pendingAsaPurchaseEventCount={pendingAsaPurchaseEventCount}
+            asaFirstInstallOnDevice={asaFirstInstallOnDevice}
+            asaFirstInstallOnAccount={asaFirstInstallOnAccount}
+          />
+          <JsonValue label="CustomerInfo Raw" value={customerInfo} />
+          <JsonValue label="Offerings Raw" value={offerings} />
+          <JsonValue label="RemoteConfigs Raw" value={remoteConfigs} />
           <JsonValue label="Pending Purchase Intent" value={pendingPurchaseIntent} />
-          <JsonValue
-            label="Pending ASA Event Count"
-            value={pendingAsaPurchaseEventCount}
-          />
-          <JsonValue
-            label="ASA First Install On Device"
-            value={asaFirstInstallOnDevice}
-          />
-          <JsonValue
-            label="ASA First Install On Account"
-            value={asaFirstInstallOnAccount}
-          />
-          <JsonValue label="Offline Keys" value={offlineKeys} />
         </Section>
 
         <Section title="Event Log">
@@ -462,12 +603,128 @@ function Action({
   );
 }
 
-function Value({ label, value }: { label: string; value: string }) {
+function Value({
+  label,
+  value,
+}: {
+  label: string;
+  value: boolean | number | string | null | undefined;
+}) {
   return (
     <Text style={styles.value}>
       <Text style={styles.valueLabel}>{label}: </Text>
-      {value}
+      {value == null ? 'none' : String(value)}
     </Text>
+  );
+}
+
+function CustomerSummary({ info }: { info: AppActorCustomerInfo | null }) {
+  if (!info) {
+    return <Text style={styles.empty}>No customer snapshot loaded yet.</Text>;
+  }
+
+  const activeKeys = [...info.activeEntitlementKeys];
+  const tokenTotal = info.tokenBalance?.total;
+
+  return (
+    <View style={styles.summaryCard}>
+      <Text style={styles.summaryTitle}>Customer</Text>
+      <Value label="App User ID" value={info.appUserId ?? 'anonymous'} />
+      <Value label="Computed Offline" value={info.isComputedOffline} />
+      <Value label="Active Entitlements" value={activeKeys.join(', ') || 'none'} />
+      <Value label="Entitlement Count" value={Object.keys(info.entitlements).length} />
+      <Value label="Subscription Count" value={Object.keys(info.subscriptions).length} />
+      <Value label="Token Balance" value={tokenTotal ?? 'none'} />
+      <Value label="Verification" value={info.verification} />
+    </View>
+  );
+}
+
+function OfferingsSummary({
+  offerings,
+}: {
+  offerings: AppActorOfferings | null;
+}) {
+  if (!offerings) {
+    return <Text style={styles.empty}>No offerings loaded yet.</Text>;
+  }
+
+  const currentPackages = offerings.current?.packages ?? [];
+
+  return (
+    <View style={styles.summaryCard}>
+      <Text style={styles.summaryTitle}>Offerings</Text>
+      <Value label="Current" value={offerings.current?.id ?? 'none'} />
+      <Value label="All Offerings" value={Object.keys(offerings.all).join(', ') || 'none'} />
+      <Value label="Verification" value={offerings.verification} />
+      {currentPackages.length === 0 ? (
+        <Text style={styles.empty}>Current offering has no packages.</Text>
+      ) : (
+        currentPackages.map((pkg) => (
+          <Text key={pkg.id} style={styles.summaryLine}>
+            {pkg.id}: {pkg.localizedPriceString ?? pkg.price ?? 'no price'} (
+            {pkg.productId})
+          </Text>
+        ))
+      )}
+    </View>
+  );
+}
+
+function ConfigSummary({
+  remoteConfigs,
+  experiment,
+  storefront,
+  offlineKeys,
+}: {
+  remoteConfigs: AppActorRemoteConfigs | null;
+  experiment: AppActorExperimentAssignment | null;
+  storefront: AppActorStorefront | null;
+  offlineKeys: string[];
+}) {
+  return (
+    <View style={styles.summaryCard}>
+      <Text style={styles.summaryTitle}>Config And Store</Text>
+      <Value label="Remote Config Count" value={remoteConfigs?.items.length ?? 0} />
+      <Value label="Experiment" value={experiment?.experimentKey ?? 'none'} />
+      <Value label="Variant" value={experiment?.variantKey ?? 'none'} />
+      <Value label="Storefront" value={storefront?.store ?? 'none'} />
+      <Value label="Offline Keys" value={offlineKeys.join(', ') || 'none'} />
+    </View>
+  );
+}
+
+function IosSummary({
+  asaDiagnostics,
+  pendingAsaPurchaseEventCount,
+  asaFirstInstallOnDevice,
+  asaFirstInstallOnAccount,
+}: {
+  asaDiagnostics: AppActorAsaDiagnostics | null;
+  pendingAsaPurchaseEventCount: number | null;
+  asaFirstInstallOnDevice: boolean | null;
+  asaFirstInstallOnAccount: boolean | null;
+}) {
+  return (
+    <View style={styles.summaryCard}>
+      <Text style={styles.summaryTitle}>iOS Diagnostics</Text>
+      <Value
+        label="ASA Completed"
+        value={asaDiagnostics?.attributionCompleted ?? 'none'}
+      />
+      <Value
+        label="Pending ASA Events"
+        value={pendingAsaPurchaseEventCount ?? 'none'}
+      />
+      <Value
+        label="First Install On Device"
+        value={asaFirstInstallOnDevice ?? 'none'}
+      />
+      <Value
+        label="First Install On Account"
+        value={asaFirstInstallOnAccount ?? 'none'}
+      />
+    </View>
   );
 }
 
@@ -525,6 +782,26 @@ const styles = StyleSheet.create({
   valueLabel: {
     fontWeight: '700',
     color: '#163A5F',
+  },
+  summaryCard: {
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#F7FBFE',
+    borderWidth: 1,
+    borderColor: '#D9E6F2',
+  },
+  summaryTitle: {
+    marginBottom: 6,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A4E75',
+  },
+  summaryLine: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#20445F',
   },
   jsonBlock: {
     marginTop: 10,

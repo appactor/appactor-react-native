@@ -54,7 +54,9 @@ final class AppactorReactNative: RCTEventEmitter {
         reject: @escaping RCTPromiseRejectBlock
     ) {
         AppActorPlugin.shared.execute(method: method, withJsonString: payload) { response in
-            resolve(response)
+            Task { @MainActor in
+                resolve(response)
+            }
         }
     }
 }

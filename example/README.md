@@ -8,7 +8,7 @@ This app exercises the React Native AppActor wrapper against the real native iOS
 - Yarn `4+`
 - Xcode `16.1+`
 - CocoaPods with an up-to-date specs repo
-- Android Studio plus a JDK installation for Android builds
+- Android Studio plus JDK `17` for Android builds
 
 ## Setup
 
@@ -37,7 +37,7 @@ yarn ios
 
 ## Run Android
 
-Make sure a JDK is installed and available on `PATH`, then run:
+Make sure JDK `17` is installed and available on `PATH`, then run:
 
 ```sh
 cd example
@@ -46,10 +46,13 @@ yarn android
 
 ## What This Example Covers
 
-- configure and reset
+- auto-bootstrap configure, reset, and full snapshot refresh
 - log in and log out
+- identity reads
+- attribution snapshot and nullable helper clear
 - customer info refresh
 - offerings fetch
+- structured customer/offering/config/ASA summaries plus raw JSON inspection
 - restore purchases
 - sync purchases
 - deprecated quiet sync alias

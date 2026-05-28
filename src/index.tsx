@@ -128,8 +128,79 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function asInteger(value: unknown): number | undefined {
+  const numberValue = asNumber(value);
+  return numberValue == null ? undefined : Math.trunc(numberValue);
+}
+
 function ensureRecord(value: unknown): JsonObject {
   return isRecord(value) ? value : {};
+}
+
+function requireRecord(value: unknown, fieldName: string): JsonObject {
+  if (!isRecord(value)) {
+    throw new Error(`${fieldName} must be an object.`);
+  }
+  return value;
+}
+
+function requireString(value: unknown, fieldName: string): string {
+  if (typeof value !== 'string') {
+    throw new Error(`${fieldName} must be a string.`);
+  }
+  return value;
+}
+
+function requireInteger(value: unknown, fieldName: string): number {
+  const integerValue = asInteger(value);
+  if (integerValue == null) {
+    throw new Error(`${fieldName} must be a number.`);
+  }
+  return integerValue;
+}
+
+function optionalInteger(value: unknown, fieldName: string): number | undefined {
+  return value == null ? undefined : requireInteger(value, fieldName);
+}
+
+function requireNumber(value: unknown, fieldName: string): number {
+  const numberValue = asNumber(value);
+  if (numberValue == null) {
+    throw new Error(`${fieldName} must be a number.`);
+  }
+  return numberValue;
+}
+
+function optionalNumber(value: unknown, fieldName: string): number | undefined {
+  return value == null ? undefined : requireNumber(value, fieldName);
+}
+
+function optionalStringArray(value: unknown, fieldName: string): string[] {
+  if (value == null) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error(`${fieldName} must be an array.`);
+  }
+  return value.map((item, index) =>
+    requireString(item, `${fieldName}[${index}]`)
+  );
+}
+
+function mapStringRecord(
+  value: unknown,
+  fieldName: string
+): Record<string, string> | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  const record = requireRecord(value, fieldName);
+  return Object.fromEntries(
+    Object.entries(record).map(([key, item]) => [
+      key,
+      requireString(item, `${fieldName}.${key}`),
+    ] as const)
+  );
 }
 
 function isIterable(value: unknown): value is Iterable<unknown> {
@@ -553,9 +624,14 @@ function mapValues<T>(
   value: unknown,
   mapper: (entry: JsonObject) => T
 ): JsonMap<T> {
-  const record = ensureRecord(value);
+  if (!isRecord(value)) {
+    return {};
+  }
   return Object.fromEntries(
-    Object.entries(record).map(([key, item]) => [key, mapper(ensureRecord(item))])
+    Object.entries(value).map(([key, item]) => [
+      key,
+      mapper(requireRecord(item, key)),
+    ] as const)
   );
 }
 
@@ -563,25 +639,46 @@ function mapListValues<T>(
   value: unknown,
   mapper: (entry: JsonObject) => T
 ): JsonMap<T[]> {
-  const record = ensureRecord(value);
+  if (!isRecord(value)) {
+    return {};
+  }
   return Object.fromEntries(
-    Object.entries(record).map(([key, item]) => [
-      key,
-      Array.isArray(item) ? item.map((entry) => mapper(ensureRecord(entry))) : [],
-    ])
+    Object.entries(value).map(([key, item]) => {
+      if (!Array.isArray(item)) {
+        throw new Error(`${key} must be an array.`);
+      }
+      return [
+        key,
+        item.map((entry, index) =>
+          mapper(requireRecord(entry, `${key}[${index}]`))
+        ),
+      ] as const;
+    })
   );
 }
 
 function asStringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item, index) => requireString(item, `[${index}]`));
 }
 
 function mapStringLists(value: unknown): JsonMap<string[]> {
-  const record = ensureRecord(value);
+  if (value == null) {
+    return {};
+  }
+  const record = requireRecord(value, 'value');
   return Object.fromEntries(
-    Object.entries(record).map(([key, item]) => [key, asStringArray(item)])
+    Object.entries(record).map(([key, item]) => {
+      if (!Array.isArray(item)) {
+        throw new Error(`${key} must be an array.`);
+      }
+      return [
+        key,
+        item.map((entry, index) => requireString(entry, `${key}[${index}]`)),
+      ] as const;
+    })
   );
 }
 
@@ -871,6 +968,253 @@ function parseVerificationResult(value: unknown): AppActorVerificationResult {
   );
 }
 
+export function appActorLogLevelWireValue(value: AppActorLogLevel): string {
+  return value;
+}
+
+export function appActorLogLevelFromString(value: string): AppActorLogLevel {
+  return fromEnumValue(
+    Object.values(AppActorLogLevel),
+    value,
+    AppActorLogLevel.Info
+  );
+}
+
+export function appActorStoreWireValue(value: AppActorStore): string {
+  return value;
+}
+
+export function appActorStoreFromString(value: string): AppActorStore {
+  return parseStore(value);
+}
+
+export function appActorPackageTypeWireValue(
+  value: AppActorPackageType
+): string {
+  return value;
+}
+
+export function appActorPackageTypeFromString(
+  value: string
+): AppActorPackageType {
+  return parsePackageType(value);
+}
+
+export function appActorProductTypeWireValue(
+  value: AppActorProductType
+): string {
+  return value;
+}
+
+export function appActorProductTypeFromString(
+  value: string
+): AppActorProductType {
+  return parseProductType(value);
+}
+
+export function appActorOwnershipTypeWireValue(
+  value: AppActorOwnershipType
+): string {
+  return value;
+}
+
+export function appActorOwnershipTypeFromString(
+  value: string
+): AppActorOwnershipType {
+  return parseOwnershipType(value);
+}
+
+export function appActorPeriodTypeWireValue(
+  value: AppActorPeriodType
+): string {
+  return value;
+}
+
+export function appActorPeriodTypeFromString(value: string): AppActorPeriodType {
+  return parsePeriodType(value);
+}
+
+export function appActorSubscriptionStatusWireValue(
+  value: AppActorSubscriptionStatus
+): string {
+  return value;
+}
+
+export function appActorSubscriptionStatusFromString(
+  value: string
+): AppActorSubscriptionStatus {
+  return parseSubscriptionStatus(value);
+}
+
+export function appActorCancellationReasonWireValue(
+  value: AppActorCancellationReason
+): string {
+  return value;
+}
+
+export function appActorCancellationReasonFromString(
+  value: string
+): AppActorCancellationReason {
+  return parseCancellationReason(value);
+}
+
+export function appActorConfigValueTypeWireValue(
+  value: AppActorConfigValueType
+): string {
+  return value;
+}
+
+export function appActorConfigValueTypeFromString(
+  value: string
+): AppActorConfigValueType {
+  return parseConfigValueType(value);
+}
+
+export function appActorStoreCapabilityWireValue(
+  value: AppActorStoreCapability
+): string {
+  return value;
+}
+
+export function appActorStoreCapabilityFromString(
+  value: string | null | undefined
+): AppActorStoreCapability | null {
+  if (value == null) {
+    return null;
+  }
+  return parseStoreCapability(value);
+}
+
+export function appActorSubscriptionReplacementModeWireValue(
+  value: AppActorSubscriptionReplacementMode
+): string {
+  return value;
+}
+
+export function appActorSubscriptionReplacementModeFromString(
+  value: string | null | undefined
+): AppActorSubscriptionReplacementMode | null {
+  if (value == null) {
+    return null;
+  }
+  const parsed = fromEnumValue(
+    Object.values(AppActorSubscriptionReplacementMode),
+    value,
+    '' as AppActorSubscriptionReplacementMode,
+    {
+      withTimeProration: AppActorSubscriptionReplacementMode.WithTimeProration,
+      chargeProrated: AppActorSubscriptionReplacementMode.ChargeProrated,
+      withoutProration: AppActorSubscriptionReplacementMode.WithoutProration,
+      chargeFullPrice: AppActorSubscriptionReplacementMode.ChargeFullPrice,
+    }
+  );
+  return parsed || null;
+}
+
+export function appActorIntegrationIdentifierWireValue(
+  value: AppActorIntegrationIdentifier
+): string {
+  return value;
+}
+
+export function appActorIntegrationIdentifierFromString(
+  value: string | null | undefined
+): AppActorIntegrationIdentifier | null {
+  if (value == null) {
+    return null;
+  }
+  const parsed = fromEnumValue(
+    Object.values(AppActorIntegrationIdentifier),
+    value,
+    '' as AppActorIntegrationIdentifier,
+    {
+      appsFlyerId: AppActorIntegrationIdentifier.AppsFlyerId,
+      adjustId: AppActorIntegrationIdentifier.AdjustId,
+      branchId: AppActorIntegrationIdentifier.BranchId,
+      firebaseAppInstanceId:
+        AppActorIntegrationIdentifier.FirebaseAppInstanceId,
+      amplitudeUserId: AppActorIntegrationIdentifier.AmplitudeUserId,
+      amplitudeDeviceId: AppActorIntegrationIdentifier.AmplitudeDeviceId,
+      mixpanelDistinctId: AppActorIntegrationIdentifier.MixpanelDistinctId,
+      facebookAnonymousId: AppActorIntegrationIdentifier.FacebookAnonymousId,
+      oneSignalPlayerId: AppActorIntegrationIdentifier.OneSignalPlayerId,
+    }
+  );
+  return parsed || null;
+}
+
+export function appActorAttributionProviderWireValue(
+  value: AppActorAttributionProvider
+): string {
+  return value;
+}
+
+export function appActorAttributionProviderFromString(
+  value: string | null | undefined
+): AppActorAttributionProvider | null {
+  if (value == null) {
+    return null;
+  }
+  const parsed = fromEnumValue(
+    Object.values(AppActorAttributionProvider),
+    value,
+    '' as AppActorAttributionProvider,
+    {
+      appleSearchAds: AppActorAttributionProvider.AppleSearchAds,
+      googleAds: AppActorAttributionProvider.GoogleAds,
+      appsFlyer: AppActorAttributionProvider.AppsFlyer,
+    }
+  );
+  return parsed || null;
+}
+
+export function appActorAttributionStatusWireValue(
+  value: AppActorAttributionStatus
+): string {
+  return value;
+}
+
+export function appActorAttributionStatusFromString(
+  value: string | null | undefined
+): AppActorAttributionStatus | null {
+  if (value == null) {
+    return null;
+  }
+  const parsed = fromEnumValue(
+    Object.values(AppActorAttributionStatus),
+    value,
+    '' as AppActorAttributionStatus,
+    {
+      nonOrganic: AppActorAttributionStatus.NonOrganic,
+    }
+  );
+  return parsed || null;
+}
+
+export function appActorPurchaseStatusWireValue(
+  value: AppActorPurchaseStatus
+): string {
+  return value;
+}
+
+export function appActorPurchaseStatusFromString(
+  value: string
+): AppActorPurchaseStatus {
+  return parsePurchaseStatus(value);
+}
+
+export function appActorVerificationResultWireValue(
+  value: AppActorVerificationResult
+): string {
+  return value;
+}
+
+export function appActorVerificationResultFromString(
+  value: string
+): AppActorVerificationResult {
+  return parseVerificationResult(value);
+}
+
 export class AppActorError extends Error {
   readonly code: number;
   readonly detail?: string;
@@ -928,12 +1272,15 @@ export class AppActorError extends Error {
 
   static fromJson(json: JsonObject): AppActorError {
     return new AppActorError({
-      code: asNumber(json.code) ?? 0,
+      code: optionalInteger(json.code, 'code') ?? 0,
       message: asString(json.message) ?? 'Unknown error',
       detail: asString(json.detail),
       requestId: asString(json.request_id),
       scope: asString(json.scope),
-      retryAfterSeconds: asNumber(json.retry_after_seconds),
+      retryAfterSeconds: optionalNumber(
+        json.retry_after_seconds,
+        'retry_after_seconds'
+      ),
     });
   }
 }
@@ -1346,7 +1693,10 @@ export class AppActorAsaDiagnostics {
   static fromJson(json: JsonObject): AppActorAsaDiagnostics {
     return new AppActorAsaDiagnostics(
       asBoolean(json.attribution_completed) ?? false,
-      asNumber(json.pending_purchase_event_count) ?? 0,
+      optionalInteger(
+        json.pending_purchase_event_count,
+        'pending_purchase_event_count'
+      ) ?? 0,
       asBoolean(json.debug_mode) ?? false,
       asBoolean(json.auto_track_purchases) ?? false,
       asBoolean(json.track_in_sandbox) ?? false
@@ -1422,7 +1772,7 @@ export class AppActorReceiptPipelineEvent {
       asString(json.transaction_id),
       asString(json.product_id) ?? '',
       asString(json.app_user_id) ?? '',
-      asNumber(json.retry_count),
+      optionalInteger(json.retry_count, 'retry_count'),
       asString(json.next_attempt_at),
       asString(json.error_code),
       asString(json.key)
@@ -1457,9 +1807,9 @@ export class AppActorTokenBalance {
 
   static fromJson(json: JsonObject): AppActorTokenBalance {
     return new AppActorTokenBalance(
-      asNumber(json.renewable) ?? 0,
-      asNumber(json.non_renewable) ?? 0,
-      asNumber(json.total) ?? 0
+      optionalInteger(json.renewable, 'renewable') ?? 0,
+      optionalInteger(json.non_renewable, 'non_renewable') ?? 0,
+      optionalInteger(json.total, 'total') ?? 0
     );
   }
 }
@@ -1643,22 +1993,27 @@ export class AppActorCustomerInfo {
   }
 
   static fromJson(json: JsonObject): AppActorCustomerInfo {
-    const consumableBalances = isRecord(json.consumable_balances)
-      ? Object.fromEntries(
-          Object.entries(json.consumable_balances).map(([key, value]) => [
-            key,
-            asNumber(value) ?? 0,
-          ])
-        )
-      : undefined;
+    const consumableBalances =
+      json.consumable_balances != null
+        ? Object.fromEntries(
+            Object.entries(
+              requireRecord(json.consumable_balances, 'consumable_balances')
+            ).map(([key, value]) => [
+              key,
+              requireInteger(value, `consumable_balances.${key}`),
+            ])
+          )
+        : undefined;
 
     return new AppActorCustomerInfo(
       mapValues(json.entitlements, AppActorEntitlementInfo.fromJson),
       mapValues(json.subscriptions, AppActorSubscriptionInfo.fromJson),
       mapListValues(json.non_subscriptions, AppActorNonSubscription.fromJson),
       consumableBalances,
-      isRecord(json.token_balance)
-        ? AppActorTokenBalance.fromJson(json.token_balance)
+      json.token_balance != null
+        ? AppActorTokenBalance.fromJson(
+            requireRecord(json.token_balance, 'token_balance')
+          )
         : undefined,
       asString(json.snapshot_date),
       asString(json.app_user_id),
@@ -1669,7 +2024,12 @@ export class AppActorCustomerInfo {
       asString(json.management_url),
       asBoolean(json.is_computed_offline) ?? false,
       mapStringLists(json.product_entitlements),
-      new Set(asStringArray(json.active_entitlement_keys)),
+      new Set(
+        optionalStringArray(
+          json.active_entitlement_keys,
+          'active_entitlement_keys'
+        )
+      ),
       parseVerificationResult(json.verification)
     );
   }
@@ -1727,21 +2087,15 @@ export class AppActorPackage {
       asString(json.base_plan_id),
       asString(json.offer_id),
       asString(json.localized_price_string),
-      asNumber(json.price_amount_micros),
-      asNumber(json.price),
+      optionalInteger(json.price_amount_micros, 'price_amount_micros'),
+      optionalNumber(json.price, 'price'),
       asString(json.currency_code),
       asString(json.display_name),
       asString(json.product_name),
       asString(json.product_description),
-      isRecord(json.metadata)
-        ? Object.fromEntries(
-            Object.entries(json.metadata)
-              .filter(([, value]) => typeof value === 'string')
-              .map(([key, value]) => [key, value as string])
-          )
-        : undefined,
-      asNumber(json.token_amount),
-      asNumber(json.position),
+      mapStringRecord(json.metadata, 'metadata'),
+      optionalInteger(json.token_amount, 'token_amount'),
+      optionalInteger(json.position, 'position'),
       asString(json.server_id),
       asString(json.offering_id)
     );
@@ -1800,16 +2154,10 @@ export class AppActorOffering {
       asString(json.display_name) ?? '',
       asBoolean(json.is_current) ?? false,
       asString(json.lookup_key),
-      isRecord(json.metadata)
-        ? Object.fromEntries(
-            Object.entries(json.metadata)
-              .filter(([, value]) => typeof value === 'string')
-              .map(([key, value]) => [key, value as string])
-          )
-        : undefined,
+      mapStringRecord(json.metadata, 'metadata'),
       Array.isArray(json.packages)
         ? json.packages.map((entry) =>
-            AppActorPackage.fromJson(ensureRecord(entry))
+            AppActorPackage.fromJson(requireRecord(entry, 'packages[]'))
           )
         : []
     );
@@ -1834,7 +2182,9 @@ export class AppActorOfferings {
 
   static fromJson(json: JsonObject): AppActorOfferings {
     return new AppActorOfferings(
-      isRecord(json.current) ? AppActorOffering.fromJson(json.current) : null,
+      json.current != null
+        ? AppActorOffering.fromJson(requireRecord(json.current, 'current'))
+        : null,
       mapValues(json.all, AppActorOffering.fromJson),
       mapStringLists(json.product_entitlements),
       parseVerificationResult(json.verification)
@@ -1890,11 +2240,15 @@ export class AppActorPurchaseResult {
   static fromJson(json: JsonObject): AppActorPurchaseResult {
     return new AppActorPurchaseResult(
       parsePurchaseStatus(json.status),
-      isRecord(json.customer_info)
-        ? AppActorCustomerInfo.fromJson(json.customer_info)
+      json.customer_info != null
+        ? AppActorCustomerInfo.fromJson(
+            requireRecord(json.customer_info, 'customer_info')
+          )
         : undefined,
-      isRecord(json.purchase_info)
-        ? AppActorPurchaseInfo.fromJson(json.purchase_info)
+      json.purchase_info != null
+        ? AppActorPurchaseInfo.fromJson(
+            requireRecord(json.purchase_info, 'purchase_info')
+          )
         : undefined
     );
   }
@@ -1939,7 +2293,7 @@ export class AppActorRemoteConfigs {
     return new AppActorRemoteConfigs(
       Array.isArray(json.items)
         ? json.items.map((entry) =>
-            AppActorRemoteConfigItem.fromJson(ensureRecord(entry))
+            AppActorRemoteConfigItem.fromJson(requireRecord(entry, 'items[]'))
           )
         : []
     );
@@ -1955,7 +2309,11 @@ export class AppActorDeferredPurchaseEvent {
   static fromJson(json: JsonObject): AppActorDeferredPurchaseEvent {
     return new AppActorDeferredPurchaseEvent(
       asString(json.product_id) ?? '',
-      AppActorCustomerInfo.fromJson(ensureRecord(json.customer_info))
+      AppActorCustomerInfo.fromJson(
+        json.customer_info == null
+          ? {}
+          : requireRecord(json.customer_info, 'customer_info')
+      )
     );
   }
 }
@@ -2447,7 +2805,7 @@ export class AppActor {
     const response = await execute(METHOD_NAMES.getExperimentAssignment, {
       experiment_key: experimentKey,
     });
-    if (!response.experiment_key) {
+    if (response.experiment_key == null) {
       return null;
     }
     return AppActorExperimentAssignment.fromJson(response);
@@ -2506,7 +2864,7 @@ export class AppActor {
       );
     }
     const response = await execute(METHOD_NAMES.getPendingAsaPurchaseEventCount);
-    return asNumber(response.value) ?? 0;
+    return optionalInteger(response.value, 'value') ?? 0;
   }
 
   async getAsaFirstInstallOnDevice(): Promise<boolean> {

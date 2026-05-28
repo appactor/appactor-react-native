@@ -65,7 +65,7 @@ The final delivery is not "a working wrapper". It is "a React Native package tha
 
 ### Confirmed packaging/documentation risks from Flutter
 
-- The Flutter iOS consumer install path is not self-contained today because the podspec depends on `AppActorPlugin 0.1.8`, but a plain CocoaPods consumer cannot resolve that pod from public specs alone on this machine.
+- The Flutter iOS consumer install path originally needed special attention because the wrapper podspec depends on `AppActorPlugin 0.1.8`; current React Native verification resolves that pod from the default CocoaPods sources with `pod install --repo-update`.
 - The React Native package must avoid repeating that ambiguity. If the iOS dependency is not available from the default CocoaPods sources, the README and example Podfile must document the exact extra source or Podfile pin required.
 - Flutter's example currently mixes up the meaning of `syncPurchases()` versus explicit queue drain in log text. React Native docs and example must not repeat that confusion.
 - Flutter example coverage is smoke-heavy relative to surface area. React Native needs stronger JS, native, and example verification.
@@ -238,9 +238,9 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
 
 - [x] Export `setIntegrationIdentifier(type, value)`.
 - [x] Export `unsetIntegrationIdentifier(type)`.
-- [ ] Export `setCustomIntegrationIdentifier(type, value)`.
+- [x] Export `setCustomIntegrationIdentifier(type, value)`.
 - [x] Export `unsetCustomIntegrationIdentifier(type)`.
-- [ ] Export helper aliases:
+- [x] Export helper aliases:
   - `setAppsflyerID`
   - `setAppsFlyerID`
   - `setAdjustID`
@@ -248,17 +248,17 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
   - `setFirebaseAppInstanceID`
   - `setOneSignalID`
 - [x] Export `updateAttribution(attribution)`.
-- [ ] Preserve Flutter's direct-attribution contract:
+- [x] Preserve Flutter's direct-attribution contract:
   - omitting a field means "do not send that field"
   - direct `updateAttribution()` is not the same thing as explicit clear
-- [ ] Export helper merge calls:
+- [x] Export helper merge calls:
   - `setMediaSource`
   - `setCampaign`
   - `setAdGroup`
   - `setAd`
   - `setKeyword`
   - `setCreative`
-- [ ] Preserve explicit `null` helper clears on those six convenience methods.
+- [x] Preserve explicit `null` helper clears on those six convenience methods.
 - [x] Keep direct `updateAttribution` independent from convenience-helper merge state.
 - [ ] Preserve validation for:
   - integration identifier types and values
@@ -269,10 +269,10 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
 
 ### Remote config and experiments
 
-- [ ] Export `getRemoteConfigs()`.
-- [ ] Export `getExperimentAssignment(key)`.
-- [ ] Export `getRemoteConfig(key)`.
-- [ ] Export convenience getters:
+- [x] Export `getRemoteConfigs()`.
+- [x] Export `getExperimentAssignment(key)`.
+- [x] Export `getRemoteConfig(key)`.
+- [x] Export convenience getters:
   - `getRemoteConfigBool`
   - `getRemoteConfigString`
   - `getRemoteConfigNumber`
@@ -306,37 +306,37 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
 
 ### Shared transport model
 
-- [ ] Implement one native `execute(method, json)` command path on iOS.
-- [ ] Implement one native `execute(method, json)` command path on Android.
-- [ ] Keep JSON envelope semantics compatible with Flutter:
+- [x] Implement one native `execute(method, json)` command path on iOS.
+- [x] Implement one native `execute(method, json)` command path on Android.
+- [x] Keep JSON envelope semantics compatible with Flutter:
   - success payload under `success`
   - error payload under `error`
   - primitive success values rewrapped into `{ value: ... }` on JS side
-- [ ] Decode native errors into one `AppActorError` model with code/message/detail/requestId/scope/retryAfterSeconds.
-- [ ] Normalize bridge-level failures into the same `AppActorError` public surface instead of leaking raw transport exceptions.
-- [ ] Keep the bridge single-path architecture:
+- [x] Decode native errors into one `AppActorError` model with code/message/detail/requestId/scope/retryAfterSeconds.
+- [x] Normalize bridge-level failures into the same `AppActorError` public surface instead of leaking raw transport exceptions.
+- [x] Keep the bridge single-path architecture:
   - JS -> native via `execute(method, json)`
   - native -> JS via one event emitter path
 
 ### iOS bridge
 
-- [ ] Build a React Native iOS module in Swift that depends on pod `AppActorPlugin` `0.1.8`.
-- [ ] Make the iOS install story reproducible for clean consumer apps.
-- [ ] Decide and document iOS privacy metadata ownership for the RN package.
-- [ ] Forward RN method calls into `AppActorPlugin.shared.execute(method:withJsonString:completion:)`.
-- [ ] Subscribe to `AppActorPlugin.shared.delegate`.
-- [ ] Start event listening on module initialization / observation start.
-- [ ] Stop event listening safely when no longer needed.
+- [x] Build a React Native iOS module in Swift that depends on pod `AppActorPlugin` `0.1.8`.
+- [x] Make the iOS install story reproducible for clean consumer apps.
+- [x] Decide and document iOS privacy metadata ownership for the RN package.
+- [x] Forward RN method calls into `AppActorPlugin.shared.execute(method:withJsonString:completion:)`.
+- [x] Subscribe to `AppActorPlugin.shared.delegate`.
+- [x] Start event listening on module initialization / observation start.
+- [x] Stop event listening safely when no longer needed.
 
 ### Android bridge
 
-- [ ] Build a React Native Android module in Kotlin that depends on Maven artifact `com.appactor:appactor-plugin:2.3.7`.
-- [ ] Call `AppActorPlugin.setContext(context)` during module/package setup.
-- [ ] Keep `Activity` synced through lifecycle so purchase APIs can access it.
-- [ ] Forward RN method calls into `AppActorPlugin.execute(method, json, callback)`.
-- [ ] Subscribe to `AppActorPlugin.eventListener`.
-- [ ] Start event listening on initialization.
-- [ ] Stop event listening safely during teardown if needed.
+- [x] Build a React Native Android module in Kotlin that depends on Maven artifact `com.appactor:appactor-plugin:2.3.7`.
+- [x] Call `AppActorPlugin.setContext(context)` during module/package setup.
+- [x] Keep `Activity` synced through lifecycle so purchase APIs can access it.
+- [x] Forward RN method calls into `AppActorPlugin.execute(method, json, callback)`.
+- [x] Subscribe to `AppActorPlugin.eventListener`.
+- [x] Start event listening on initialization.
+- [x] Stop event listening safely during teardown if needed.
 
 ### Method availability matrix
 
@@ -406,61 +406,62 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
 
 ### Offerings and catalog models
 
-- [ ] `AppActorOfferings`
-- [ ] `AppActorOffering`
-- [ ] `AppActorPackage`
-- [ ] Preserve full package/store lookup and upgrade-related fields, not just price/product basics.
+- [x] `AppActorOfferings`
+- [x] `AppActorOffering`
+- [x] `AppActorPackage`
+- [x] Preserve full package/store lookup and upgrade-related fields, not just price/product basics.
 
 ### Customer state models
 
-- [ ] `AppActorCustomerInfo`
-- [ ] `AppActorEntitlementInfo`
-- [ ] `AppActorSubscriptionInfo`
-- [ ] `AppActorNonSubscription`
-- [ ] `AppActorTokenBalance`
-- [ ] Preserve full customer-state metadata, not just entitlement booleans.
+- [x] `AppActorCustomerInfo`
+- [x] `AppActorEntitlementInfo`
+- [x] `AppActorSubscriptionInfo`
+- [x] `AppActorNonSubscription`
+- [x] `AppActorTokenBalance`
+- [x] Preserve full customer-state metadata, not just entitlement booleans.
 
 ### Purchase and store models
 
-- [ ] `AppActorPurchaseResult`
-- [ ] `AppActorPurchaseInfo`
-- [ ] `AppActorStorefront`
+- [x] `AppActorPurchaseResult`
+- [x] `AppActorPurchaseInfo`
+- [x] `AppActorStorefront`
 
 ### Config and experiment models
 
-- [ ] `AppActorRemoteConfigs`
-- [ ] `AppActorRemoteConfigItem`
-- [ ] `AppActorExperimentAssignment`
+- [x] `AppActorRemoteConfigs`
+- [x] `AppActorRemoteConfigItem`
+- [x] `AppActorExperimentAssignment`
 
 ### Attribution and helper models
 
-- [ ] `AppActorAttributeValue`
-- [ ] `AppActorAttribution`
+- [x] `AppActorAttributeValue`
+- [x] `AppActorAttribution`
 
 ### Event payload models
 
-- [ ] `AppActorReceiptPipelineEvent`
-- [ ] `AppActorPurchaseIntent`
-- [ ] `AppActorDeferredPurchaseEvent`
-- [ ] `AppActorAsaDiagnostics`
+- [x] `AppActorReceiptPipelineEvent`
+- [x] `AppActorPurchaseIntent`
+- [x] `AppActorDeferredPurchaseEvent`
+- [x] `AppActorAsaDiagnostics`
 
 ### Enum parity
 
-- [ ] `AppActorLogLevel`
-- [ ] `AppActorStore`
-- [ ] `AppActorPackageType`
-- [ ] `AppActorProductType`
-- [ ] `AppActorOwnershipType`
-- [ ] `AppActorPeriodType`
-- [ ] `AppActorSubscriptionStatus`
-- [ ] `AppActorCancellationReason`
-- [ ] `AppActorConfigValueType`
-- [ ] `AppActorStoreCapability`
-- [ ] `AppActorSubscriptionReplacementMode`
-- [ ] `AppActorIntegrationIdentifier`
-- [ ] `AppActorAttributionProvider`
-- [ ] `AppActorAttributionStatus`
-- [ ] `AppActorPurchaseStatus`
+- [x] `AppActorLogLevel`
+- [x] `AppActorStore`
+- [x] `AppActorPackageType`
+- [x] `AppActorProductType`
+- [x] `AppActorOwnershipType`
+- [x] `AppActorPeriodType`
+- [x] `AppActorSubscriptionStatus`
+- [x] `AppActorCancellationReason`
+- [x] `AppActorConfigValueType`
+- [x] `AppActorStoreCapability`
+- [x] `AppActorSubscriptionReplacementMode`
+- [x] `AppActorIntegrationIdentifier`
+- [x] `AppActorAttributionProvider`
+- [x] `AppActorAttributionStatus`
+- [x] `AppActorPurchaseStatus`
+- [x] `AppActorVerificationResult`
 
 ## Example App Checklist
 
@@ -487,7 +488,7 @@ Nothing in Flutter's exported surface is allowed to silently disappear.
   - public API key injection
   - iOS native dependency resolution, if extra Podfile sources or pins are required
   - Android prerequisites
-- [x] Example should explicitly demonstrate throw vs no-op vs default-return platform behavior where relevant.
+- [ ] Example should explicitly demonstrate throw vs no-op vs default-return platform behavior where relevant.
 
 ## Testing Checklist
 

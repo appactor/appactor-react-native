@@ -44,6 +44,10 @@ import {
   AppActorAttributeValue,
   AppActorAttribution,
   AppActorAttributionProvider,
+  AppActorAttributionStatus,
+  appActorAttributionProviderFromString,
+  appActorAttributionProviderWireValue,
+  appActorAttributionStatusFromString,
   AppActorCustomerInfo,
   AppActorDeferredPurchaseEvent,
   AppActorError,
@@ -51,23 +55,36 @@ import {
   AppActorEntitlementInfo,
   AppActorExperimentAssignment,
   AppActorIntegrationIdentifier,
+  appActorIntegrationIdentifierFromString,
   AppActorLogLevel,
   AppActorOptions,
   AppActorOfferings,
   AppActorPackage,
   AppActorPackageType,
+  appActorPackageTypeFromString,
+  appActorPackageTypeWireValue,
   AppActorPlatformKeys,
+  AppActorReceiptPipelineEvent,
   AppActorPurchaseIntent,
   AppActorPurchaseResult,
   AppActorProductType,
   AppActorPurchaseStatus,
+  appActorPurchaseStatusFromString,
   AppActorRemoteConfigItem,
   AppActorRemoteConfigs,
   AppActorStoreCapability,
+  appActorStoreCapabilityFromString,
+  appActorStoreCapabilityWireValue,
   AppActorStore,
+  appActorStoreFromString,
+  appActorStoreWireValue,
   AppActorStorefront,
+  AppActorSubscriptionReplacementMode,
+  appActorSubscriptionReplacementModeFromString,
   AppActorSubscriptionInfo,
+  AppActorTokenBalance,
   AppActorVerificationResult,
+  appActorVerificationResultWireValue,
   UnsupportedError,
 } from '../index';
 import { Platform } from 'react-native';
@@ -395,6 +412,52 @@ describe('AppActor React Native', () => {
     });
   });
 
+  it('routes attribution bridge calls with direct payloads and explicit clears', async () => {
+    mockExecute.mockResolvedValue(success(null));
+
+    await AppActor.instance.updateAttribution(
+      new AppActorAttribution({
+        provider: AppActorAttributionProvider.Meta,
+        source: 'facebook',
+        campaign: 'spring_sale',
+        metadata: {
+          rank: 2,
+        },
+      })
+    );
+    await AppActor.instance.setMediaSource('facebook');
+    await AppActor.instance.setCampaign(null);
+    await AppActor.instance.setCreative('video_a');
+
+    expect(mockExecute).toHaveBeenNthCalledWith(
+      1,
+      'update_attribution',
+      JSON.stringify({
+        provider: 'meta',
+        source: 'facebook',
+        campaign: 'spring_sale',
+        metadata: {
+          rank: 2,
+        },
+      })
+    );
+    expect(mockExecute).toHaveBeenNthCalledWith(
+      2,
+      'set_media_source',
+      JSON.stringify({ value: 'facebook' })
+    );
+    expect(mockExecute).toHaveBeenNthCalledWith(
+      3,
+      'set_campaign',
+      JSON.stringify({ value: null })
+    );
+    expect(mockExecute).toHaveBeenNthCalledWith(
+      4,
+      'set_creative',
+      JSON.stringify({ value: 'video_a' })
+    );
+  });
+
   it('routes profile helpers through the native bridge', async () => {
     mockExecute.mockResolvedValue(success(null));
 
@@ -634,7 +697,7 @@ describe('AppActor React Native', () => {
 
   it('reads iOS ASA helper values through the native bridge', async () => {
     mockExecute
-      .mockResolvedValueOnce(success(3))
+      .mockResolvedValueOnce(success(3.9))
       .mockResolvedValueOnce(success(true))
       .mockResolvedValueOnce(success(false));
 
@@ -736,6 +799,30 @@ describe('AppActor React Native', () => {
     ).resolves.toBeNull();
   });
 
+  it('keeps empty-string experiment assignments instead of treating them as null', async () => {
+    mockExecute.mockResolvedValue(
+      success({
+        experiment_id: 'exp_empty',
+        experiment_key: '',
+        variant_id: 'variant_empty',
+        variant_key: 'control',
+        payload: 'fallback',
+        value_type: 'string',
+        assigned_at: '2026-05-16T12:00:00.000Z',
+      })
+    );
+
+    const assignment = await AppActor.instance.getExperimentAssignment('');
+
+    expect(assignment).toEqual(
+      expect.objectContaining({
+        experimentId: 'exp_empty',
+        experimentKey: '',
+        variantKey: 'control',
+      })
+    );
+  });
+
   it('treats sync, quiet sync, and drain queue as distinct wire methods', async () => {
     mockExecute.mockResolvedValue(
       success({ app_user_id: 'user_123', active_entitlement_keys: ['premium'] })
@@ -788,6 +875,12 @@ describe('AppActor React Native', () => {
     expect(error.scope).toBe('ip');
     expect(error.retryAfterSeconds).toBe(30);
     expect(error.isTransient).toBe(true);
+    expect(() =>
+      AppActorError.fromJson({
+        message: 'Rate limited',
+        retry_after_seconds: 'not_a_number',
+      })
+    ).toThrow('retry_after_seconds must be a number.');
   });
 
   it('parses ASA diagnostics, storefront, remote configs, and deferred purchase models', () => {
@@ -842,6 +935,215 @@ describe('AppActor React Native', () => {
         }),
       })
     );
+  });
+
+  it('truncates integer-semantic model fields like Flutter toInt()', () => {
+    const error = AppActorError.fromJson({
+      code: 2001.9,
+      message: 'Not configured',
+      retry_after_seconds: 3.75,
+    });
+    const diagnostics = AppActorAsaDiagnostics.fromJson({
+      pending_purchase_event_count: 2.9,
+    });
+    const event = AppActorReceiptPipelineEvent.fromJson({
+      retry_count: 4.8,
+    });
+    const balance = AppActorTokenBalance.fromJson({
+      renewable: 10.9,
+      non_renewable: -2.9,
+      total: 8.4,
+    });
+    const customerInfo = AppActorCustomerInfo.fromJson({
+      consumable_balances: {
+        coins: 12.75,
+      },
+      token_balance: {
+        renewable: 1.9,
+        non_renewable: 2.9,
+        total: 4.8,
+      },
+    });
+    const pkg = AppActorPackage.fromJson({
+      id: 'coins_100',
+      package_type: 'consumable',
+      product_id: 'com.app.coins100',
+      price_amount_micros: 1990000.99,
+      price: 1.99,
+      token_amount: 100.75,
+      position: 3.4,
+    });
+
+    expect(error.code).toBe(2001);
+    expect(error.retryAfterSeconds).toBe(3.75);
+    expect(diagnostics.pendingPurchaseEventCount).toBe(2);
+    expect(event.retryCount).toBe(4);
+    expect(balance).toEqual(
+      expect.objectContaining({
+        renewable: 10,
+        nonRenewable: -2,
+        total: 8,
+      })
+    );
+    expect(customerInfo.consumableBalances?.coins).toBe(12);
+    expect(customerInfo.tokenBalance).toEqual(
+      expect.objectContaining({
+        renewable: 1,
+        nonRenewable: 2,
+        total: 4,
+      })
+    );
+    expect(pkg.priceAmountMicros).toBe(1990000);
+    expect(pkg.price).toBe(1.99);
+    expect(pkg.tokenAmount).toBe(100);
+    expect(pkg.position).toBe(3);
+  });
+
+  it('throws for malformed nested model payloads like Flutter casts', () => {
+    expect(() =>
+      AppActorRemoteConfigs.fromJson({
+        items: ['not_an_object'],
+      })
+    ).toThrow('items[] must be an object.');
+    expect(() =>
+      AppActorCustomerInfo.fromJson({
+        entitlements: {
+          premium: 'not_an_object',
+        },
+      })
+    ).toThrow('premium must be an object.');
+    expect(() =>
+      AppActorCustomerInfo.fromJson({
+        non_subscriptions: {
+          coins: ['not_an_object'],
+        },
+      })
+    ).toThrow('coins[0] must be an object.');
+    expect(() =>
+      AppActorCustomerInfo.fromJson({
+        product_entitlements: {
+          premium: 'not_a_list',
+        },
+      })
+    ).toThrow('premium must be an array.');
+    expect(() =>
+      AppActorCustomerInfo.fromJson({
+        consumable_balances: {
+          coins: 'not_a_number',
+        },
+      })
+    ).toThrow('consumable_balances.coins must be a number.');
+    expect(() =>
+      AppActorCustomerInfo.fromJson({
+        consumable_balances: 'not_a_map',
+      })
+    ).toThrow('consumable_balances must be an object.');
+    expect(() =>
+      AppActorCustomerInfo.fromJson({
+        product_entitlements: 'not_a_map',
+      })
+    ).toThrow('value must be an object.');
+    expect(() =>
+      AppActorCustomerInfo.fromJson({
+        product_entitlements: {
+          premium: ['com.app.monthly', 42],
+        },
+      })
+    ).toThrow('premium[1] must be a string.');
+    expect(() =>
+      AppActorCustomerInfo.fromJson({
+        active_entitlement_keys: 'premium',
+      })
+    ).toThrow('active_entitlement_keys must be an array.');
+    expect(() =>
+      AppActorCustomerInfo.fromJson({
+        active_entitlement_keys: ['premium', 42],
+      })
+    ).toThrow('active_entitlement_keys[1] must be a string.');
+    expect(() =>
+      AppActorTokenBalance.fromJson({
+        renewable: 'not_a_number',
+      })
+    ).toThrow('renewable must be a number.');
+    expect(() =>
+      AppActorOfferings.fromJson({
+        current: 'not_an_object',
+      })
+    ).toThrow('current must be an object.');
+    expect(() =>
+      AppActorOfferings.fromJson({
+        all: {
+          main: {
+            id: 'main',
+            packages: ['not_an_object'],
+          },
+        },
+      })
+    ).toThrow('packages[] must be an object.');
+    expect(() =>
+      AppActorOfferings.fromJson({
+        all: {
+          main: {
+            id: 'main',
+            metadata: {
+              rank: 1,
+            },
+          },
+        },
+      })
+    ).toThrow('metadata.rank must be a string.');
+    expect(() =>
+      AppActorPackage.fromJson({
+        id: 'monthly',
+        product_id: 'com.app.monthly',
+        metadata: {
+          rank: 1,
+        },
+      })
+    ).toThrow('metadata.rank must be a string.');
+    expect(() =>
+      AppActorPackage.fromJson({
+        id: 'monthly',
+        product_id: 'com.app.monthly',
+        price_amount_micros: 'not_a_number',
+      })
+    ).toThrow('price_amount_micros must be a number.');
+    expect(() =>
+      AppActorPackage.fromJson({
+        id: 'monthly',
+        product_id: 'com.app.monthly',
+        price: 'not_a_number',
+      })
+    ).toThrow('price must be a number.');
+    expect(() =>
+      AppActorPackage.fromJson({
+        id: 'coins',
+        product_id: 'com.app.coins',
+        token_amount: 'not_a_number',
+      })
+    ).toThrow('token_amount must be a number.');
+    expect(() =>
+      AppActorPackage.fromJson({
+        id: 'monthly',
+        product_id: 'com.app.monthly',
+        position: 'not_a_number',
+      })
+    ).toThrow('position must be a number.');
+  });
+
+  it('defaults missing deferred purchase customer info like Flutter', () => {
+    const event = AppActorDeferredPurchaseEvent.fromJson({
+      product_id: 'com.app.monthly',
+    });
+
+    expect(event.productId).toBe('com.app.monthly');
+    expect(event.customerInfo).toEqual(expect.any(AppActorCustomerInfo));
+    expect(() =>
+      AppActorDeferredPurchaseEvent.fromJson({
+        product_id: 'com.app.monthly',
+        customer_info: 'not_an_object',
+      })
+    ).toThrow('customer_info must be an object.');
   });
 
   it('parses purchase result helper flags directly', () => {
@@ -1041,6 +1343,52 @@ describe('AppActor React Native', () => {
         AppActorStoreCapability.PurchaseHistory,
       ])
     );
+  });
+
+  it('exports public wireValue/fromString-style enum helpers', () => {
+    expect(appActorStoreWireValue(AppActorStore.PlayStore)).toBe('play_store');
+    expect(appActorStoreFromString('playStore')).toBe(AppActorStore.PlayStore);
+    expect(appActorPackageTypeWireValue(AppActorPackageType.TwoMonth)).toBe(
+      'two_month'
+    );
+    expect(appActorPackageTypeFromString('twoMonth')).toBe(
+      AppActorPackageType.TwoMonth
+    );
+    expect(
+      appActorStoreCapabilityWireValue(AppActorStoreCapability.Storefront)
+    ).toBe('storefront');
+    expect(appActorStoreCapabilityFromString('purchaseHistory')).toBe(
+      AppActorStoreCapability.PurchaseHistory
+    );
+    expect(appActorStoreCapabilityFromString(null)).toBeNull();
+    expect(
+      appActorSubscriptionReplacementModeFromString('chargeFullPrice')
+    ).toBe(AppActorSubscriptionReplacementMode.ChargeFullPrice);
+    expect(appActorSubscriptionReplacementModeFromString(null)).toBeNull();
+    expect(appActorIntegrationIdentifierFromString('appsFlyerId')).toBe(
+      AppActorIntegrationIdentifier.AppsFlyerId
+    );
+    expect(appActorIntegrationIdentifierFromString(null)).toBeNull();
+    expect(
+      appActorAttributionProviderWireValue(AppActorAttributionProvider.GoogleAds)
+    ).toBe('google_ads');
+    expect(appActorAttributionProviderFromString('appleSearchAds')).toBe(
+      AppActorAttributionProvider.AppleSearchAds
+    );
+    expect(appActorAttributionProviderFromString(null)).toBeNull();
+    expect(appActorAttributionStatusFromString('nonOrganic')).toBe(
+      AppActorAttributionStatus.NonOrganic
+    );
+    expect(appActorAttributionStatusFromString('unexpected')).toBeNull();
+    expect(appActorAttributionStatusFromString(null)).toBeNull();
+    expect(appActorPurchaseStatusFromString('success')).toBe(
+      AppActorPurchaseStatus.Purchased
+    );
+    expect(
+      appActorVerificationResultWireValue(
+        AppActorVerificationResult.VerifiedOnDevice
+      )
+    ).toBe('verifiedOnDevice');
   });
 
   it('defaults missing value_type fields to string like Flutter', () => {
