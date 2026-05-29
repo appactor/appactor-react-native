@@ -63,6 +63,7 @@ import {
   AppActorPackageType,
   appActorPackageTypeFromString,
   appActorPackageTypeWireValue,
+  appActorModelEquals,
   AppActorPlatformKeys,
   AppActorReceiptPipelineEvent,
   AppActorPurchaseIntent,
@@ -84,6 +85,7 @@ import {
   AppActorSubscriptionInfo,
   AppActorTokenBalance,
   AppActorVerificationResult,
+  appActorVerificationResultIsVerified,
   appActorVerificationResultWireValue,
   UnsupportedError,
 } from '../index';
@@ -91,6 +93,41 @@ import { Platform } from 'react-native';
 
 function success(value: unknown): string {
   return JSON.stringify({ success: value });
+}
+
+function testPackage(
+  options: {
+    id?: string;
+    packageType?: AppActorPackageType;
+    productId?: string;
+    storeProductId?: string;
+    basePlanId?: string;
+    offerId?: string;
+    offeringId?: string;
+  } = {}
+): AppActorPackage {
+  return new AppActorPackage(
+    options.id ?? 'monthly',
+    options.packageType ?? AppActorPackageType.Monthly,
+    options.productId ?? 'com.app.monthly',
+    options.storeProductId,
+    AppActorProductType.Subscription,
+    AppActorStore.AppStore,
+    options.basePlanId,
+    options.offerId,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    options.offeringId
+  );
 }
 
 describe('AppActor React Native', () => {
@@ -230,27 +267,7 @@ describe('AppActor React Native', () => {
   it('serializes purchasePackage with quantity and trimmed placement', async () => {
     mockExecute.mockResolvedValue(success({ status: 'success' }));
 
-    const pkg = new AppActorPackage(
-      'monthly',
-      AppActorPackageType.Monthly,
-      'com.app.monthly',
-      undefined,
-      AppActorProductType.Subscription,
-      AppActorStore.AppStore,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined
-    );
+    const pkg = testPackage();
 
     const result = await AppActor.instance.purchasePackage(pkg, {
       quantity: 3,
@@ -264,6 +281,110 @@ describe('AppActor React Native', () => {
         package_id: 'monthly',
         quantity: 3,
         placement: 'onboarding_paywall',
+      })
+    );
+  });
+
+  it('purchasePackage omits null placement from the native payload', async () => {
+    mockExecute.mockResolvedValue(success({ status: 'success' }));
+
+    await AppActor.instance.purchasePackage(testPackage(), {
+      placement: null,
+    });
+
+    expect(mockExecute).toHaveBeenCalledWith(
+      'purchase_package',
+      JSON.stringify({
+        package_id: 'monthly',
+      })
+    );
+  });
+
+  it('purchasePackage omits blank placement from the native payload', async () => {
+    mockExecute.mockResolvedValue(success({ status: 'success' }));
+
+    await AppActor.instance.purchasePackage(testPackage(), {
+      placement: '   ',
+    });
+
+    expect(mockExecute).toHaveBeenCalledWith(
+      'purchase_package',
+      JSON.stringify({
+        package_id: 'monthly',
+      })
+    );
+  });
+
+  it('purchasePackage serializes max length placement', async () => {
+    mockExecute.mockResolvedValue(success({ status: 'success' }));
+
+    const placement = 'x'.repeat(255);
+    await AppActor.instance.purchasePackage(testPackage(), {
+      placement,
+    });
+
+    expect(mockExecute).toHaveBeenCalledWith(
+      'purchase_package',
+      JSON.stringify({
+        package_id: 'monthly',
+        placement,
+      })
+    );
+  });
+
+  it('purchasePackage omits overlong placement from the native payload', async () => {
+    mockExecute.mockResolvedValue(success({ status: 'success' }));
+
+    await AppActor.instance.purchasePackage(testPackage(), {
+      placement: 'x'.repeat(256),
+    });
+
+    expect(mockExecute).toHaveBeenCalledWith(
+      'purchase_package',
+      JSON.stringify({
+        package_id: 'monthly',
+      })
+    );
+  });
+
+  it('purchasePackage rejects invalid quantity before native dispatch', async () => {
+    await expect(
+      AppActor.instance.purchasePackage(testPackage(), { quantity: 0 })
+    ).rejects.toThrow('Purchase quantity must be at least 1.');
+
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('serializes empty-string optional package identifiers when non-null', () => {
+    const pkg = testPackage({
+      storeProductId: '',
+      basePlanId: '',
+      offerId: '',
+      offeringId: '',
+    });
+
+    expect(pkg.toPurchaseParams()).toEqual({
+      package_id: 'monthly',
+      store_product_id: '',
+      product_id: 'com.app.monthly',
+      product_type: 'subscription',
+      store: 'app_store',
+      base_plan_id: '',
+      offer_id: '',
+      offering_id: '',
+    });
+  });
+
+  it('purchasePackage forwards empty-string offering id when non-null', async () => {
+    mockExecute.mockResolvedValue(success({ status: 'success' }));
+
+    await AppActor.instance.purchasePackage(testPackage({ offeringId: '' }));
+
+    expect(mockExecute).toHaveBeenCalledWith(
+      'purchase_package',
+      JSON.stringify({
+        package_id: 'monthly',
+        offering_id: '',
       })
     );
   });
@@ -456,6 +577,82 @@ describe('AppActor React Native', () => {
       'set_creative',
       JSON.stringify({ value: 'video_a' })
     );
+  });
+
+  it('custom attribute keys reject reserved prefixes before native dispatch', async () => {
+    const cases: Array<() => Promise<void>> = [
+      () => AppActor.instance.setAttribute('', 'x'),
+      () => AppActor.instance.setAttribute('$email', 'x'),
+      () => AppActor.instance.setAttribute('appactor.source', 'x'),
+      () => AppActor.instance.setAttribute('integration.adjust_id', 'x'),
+      () => AppActor.instance.setAttribute('appVersion', 'x'),
+      () => AppActor.instance.setAttribute('platform', 'x'),
+      () => AppActor.instance.setAttribute('userCountry', 'x'),
+      () => AppActor.instance.setAttributes({ 'AppActor.source': 'x' }),
+      () => AppActor.instance.setAttribute('x'.repeat(65), 'x'),
+      () => AppActor.instance.setAttribute('bad key', 'x'),
+    ];
+
+    for (const run of cases) {
+      await expect(run()).rejects.toThrow();
+    }
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('attribute values reject backend-incompatible shapes before native dispatch', async () => {
+    const cases: Array<() => Promise<void>> = [
+      () => AppActor.instance.setAttribute('score', Number.NaN),
+      () => AppActor.instance.setAttributes({ nested: { value: true } }),
+      () => AppActor.instance.setAttribute('mixed_array', ['a', 1]),
+      () =>
+        AppActor.instance.setAttribute(
+          'too_many',
+          Array.from({ length: 21 }, (_, index) => `item_${index}`)
+        ),
+    ];
+
+    for (const run of cases) {
+      await expect(run()).rejects.toThrow();
+    }
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('attribution canonical fields and metadata keys validate before native dispatch', async () => {
+    const cases: Array<() => Promise<void>> = [
+      () =>
+        AppActor.instance.updateAttribution(
+          new AppActorAttribution({
+            provider: AppActorAttributionProvider.Custom,
+            providerName: ' facebook',
+          })
+        ),
+      () =>
+        AppActor.instance.updateAttribution(
+          new AppActorAttribution({
+            provider: AppActorAttributionProvider.Custom,
+            campaignName: 'x'.repeat(1025),
+          })
+        ),
+      () =>
+        AppActor.instance.updateAttribution(
+          new AppActorAttribution({
+            provider: AppActorAttributionProvider.Custom,
+            metadata: { 'appactor.private': 'x' },
+          })
+        ),
+      () =>
+        AppActor.instance.updateAttribution(
+          new AppActorAttribution({
+            provider: AppActorAttributionProvider.Custom,
+            metadata: { 'integration.adjust_id': 'x' },
+          })
+        ),
+    ];
+
+    for (const run of cases) {
+      await expect(run()).rejects.toThrow();
+    }
+    expect(mockExecute).not.toHaveBeenCalled();
   });
 
   it('routes profile helpers through the native bridge', async () => {
@@ -1389,6 +1586,22 @@ describe('AppActor React Native', () => {
         AppActorVerificationResult.VerifiedOnDevice
       )
     ).toBe('verifiedOnDevice');
+    expect(
+      appActorVerificationResultIsVerified(AppActorVerificationResult.Verified)
+    ).toBe(true);
+    expect(
+      appActorVerificationResultIsVerified(
+        AppActorVerificationResult.VerifiedOnDevice
+      )
+    ).toBe(true);
+    expect(
+      appActorVerificationResultIsVerified(AppActorVerificationResult.Failed)
+    ).toBe(false);
+    expect(
+      appActorVerificationResultIsVerified(
+        AppActorVerificationResult.NotRequested
+      )
+    ).toBe(false);
   });
 
   it('defaults missing value_type fields to string like Flutter', () => {
@@ -1406,6 +1619,66 @@ describe('AppActor React Native', () => {
 
     expect(experiment.valueType).toBe(AppActorConfigValueType.String);
     expect(remoteConfig.valueType).toBe(AppActorConfigValueType.String);
+  });
+
+  it('offers value-style equality helpers for public models', () => {
+    const firstCustomer = AppActorCustomerInfo.fromJson({
+      app_user_id: 'user_123',
+      active_entitlement_keys: ['premium', 'plus'],
+      token_balance: {
+        renewable: 5,
+        non_renewable: 2,
+        total: 7,
+      },
+    });
+    const sameCustomer = AppActorCustomerInfo.fromJson({
+      app_user_id: 'user_123',
+      active_entitlement_keys: ['plus', 'premium'],
+      token_balance: {
+        renewable: 5,
+        non_renewable: 2,
+        total: 7,
+      },
+    });
+    const differentCustomer = AppActorCustomerInfo.fromJson({
+      app_user_id: 'user_123',
+      active_entitlement_keys: ['basic'],
+      token_balance: {
+        renewable: 5,
+        non_renewable: 2,
+        total: 7,
+      },
+    });
+
+    expect(firstCustomer.equals(sameCustomer)).toBe(true);
+    expect(appActorModelEquals(firstCustomer, sameCustomer)).toBe(true);
+    expect(firstCustomer.equals(differentCustomer)).toBe(false);
+    expect(
+      new AppActorExperimentAssignment(
+        'exp',
+        'pricing',
+        'variant',
+        'A',
+        { headline: 'A' },
+        AppActorConfigValueType.Json,
+        '2026-05-16T12:00:00.000Z'
+      ).equals(
+        new AppActorExperimentAssignment(
+          'exp',
+          'pricing',
+          'variant',
+          'A',
+          { headline: 'A' },
+          AppActorConfigValueType.Json,
+          '2026-05-16T12:00:00.000Z'
+        )
+      )
+    ).toBe(true);
+    expect(
+      testPackage({ offeringId: 'default' }).equals(
+        testPackage({ offeringId: 'default' })
+      )
+    ).toBe(true);
   });
 
   it('matches Flutter validation for custom integration identifier types', async () => {

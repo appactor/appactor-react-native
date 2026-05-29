@@ -112,6 +112,49 @@ function isRecord(value: unknown): value is JsonObject {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function normalizeForEquality(
+  value: unknown,
+  seen: WeakSet<object> = new WeakSet()
+): unknown {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (value instanceof Set) {
+    return Array.from(value)
+      .map((item) => normalizeForEquality(item, seen))
+      .sort((left, right) =>
+        (JSON.stringify(left) ?? '').localeCompare(
+          JSON.stringify(right) ?? ''
+        )
+      );
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeForEquality(item, seen));
+  }
+  if (isRecord(value)) {
+    if (seen.has(value)) {
+      return '[Circular]';
+    }
+    seen.add(value);
+    const normalized = Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => typeof item !== 'function')
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, normalizeForEquality(item, seen)])
+    );
+    seen.delete(value);
+    return normalized;
+  }
+  return value;
+}
+
+export function appActorModelEquals(left: unknown, right: unknown): boolean {
+  return (
+    JSON.stringify(normalizeForEquality(left)) ===
+    JSON.stringify(normalizeForEquality(right))
+  );
+}
+
 function byteLength(value: string): number {
   return unescape(encodeURIComponent(value)).length;
 }
@@ -1209,6 +1252,15 @@ export function appActorVerificationResultWireValue(
   return value;
 }
 
+export function appActorVerificationResultIsVerified(
+  value: AppActorVerificationResult
+): boolean {
+  return (
+    value === AppActorVerificationResult.Verified ||
+    value === AppActorVerificationResult.VerifiedOnDevice
+  );
+}
+
 export function appActorVerificationResultFromString(
   value: string
 ): AppActorVerificationResult {
@@ -1715,6 +1767,13 @@ export class AppActorExperimentAssignment {
     public readonly assignedAt: string
   ) {}
 
+  equals(other: unknown): boolean {
+    return (
+      other instanceof AppActorExperimentAssignment &&
+      appActorModelEquals(this, other)
+    );
+  }
+
   static fromJson(json: JsonObject): AppActorExperimentAssignment {
     return new AppActorExperimentAssignment(
       asString(json.experiment_id) ?? '',
@@ -1992,6 +2051,12 @@ export class AppActorCustomerInfo {
     return this.activeEntitlementKeys.has(key);
   }
 
+  equals(other: unknown): boolean {
+    return (
+      other instanceof AppActorCustomerInfo && appActorModelEquals(this, other)
+    );
+  }
+
   static fromJson(json: JsonObject): AppActorCustomerInfo {
     const consumableBalances =
       json.consumable_balances != null
@@ -2062,18 +2127,24 @@ export class AppActorPackage {
   toPurchaseParams(): JsonObject {
     return {
       package_id: this.id,
-      ...(this.storeProductId ? { store_product_id: this.storeProductId } : {}),
+      ...(this.storeProductId != null
+        ? { store_product_id: this.storeProductId }
+        : {}),
       product_id: this.productId,
       product_type: this.productType,
       store: this.store,
-      ...(this.basePlanId ? { base_plan_id: this.basePlanId } : {}),
-      ...(this.offerId ? { offer_id: this.offerId } : {}),
-      ...(this.offeringId ? { offering_id: this.offeringId } : {}),
+      ...(this.basePlanId != null ? { base_plan_id: this.basePlanId } : {}),
+      ...(this.offerId != null ? { offer_id: this.offerId } : {}),
+      ...(this.offeringId != null ? { offering_id: this.offeringId } : {}),
     };
   }
 
   toJson(): JsonObject {
     return this.toPurchaseParams();
+  }
+
+  equals(other: unknown): boolean {
+    return other instanceof AppActorPackage && appActorModelEquals(this, other);
   }
 
   static fromJson(json: JsonObject): AppActorPackage {
@@ -2148,6 +2219,10 @@ export class AppActorOffering {
     return this.packageFor(AppActorPackageType.Lifetime);
   }
 
+  equals(other: unknown): boolean {
+    return other instanceof AppActorOffering && appActorModelEquals(this, other);
+  }
+
   static fromJson(json: JsonObject): AppActorOffering {
     return new AppActorOffering(
       asString(json.id) ?? '',
@@ -2178,6 +2253,12 @@ export class AppActorOfferings {
 
   offeringByLookupKey(lookupKey: string): AppActorOffering | undefined {
     return Object.values(this.all).find((item) => item.lookupKey === lookupKey);
+  }
+
+  equals(other: unknown): boolean {
+    return (
+      other instanceof AppActorOfferings && appActorModelEquals(this, other)
+    );
   }
 
   static fromJson(json: JsonObject): AppActorOfferings {
@@ -2237,6 +2318,12 @@ export class AppActorPurchaseResult {
     return this.status === AppActorPurchaseStatus.Restored;
   }
 
+  equals(other: unknown): boolean {
+    return (
+      other instanceof AppActorPurchaseResult && appActorModelEquals(this, other)
+    );
+  }
+
   static fromJson(json: JsonObject): AppActorPurchaseResult {
     return new AppActorPurchaseResult(
       parsePurchaseStatus(json.status),
@@ -2273,6 +2360,13 @@ export class AppActorRemoteConfigItem {
     return typeof this.value === 'number' ? this.value : undefined;
   }
 
+  equals(other: unknown): boolean {
+    return (
+      other instanceof AppActorRemoteConfigItem &&
+      appActorModelEquals(this, other)
+    );
+  }
+
   static fromJson(json: JsonObject): AppActorRemoteConfigItem {
     return new AppActorRemoteConfigItem(
       asString(json.key) ?? '',
@@ -2287,6 +2381,12 @@ export class AppActorRemoteConfigs {
 
   get(key: string): AppActorRemoteConfigItem | undefined {
     return this.items.find((item) => item.key === key);
+  }
+
+  equals(other: unknown): boolean {
+    return (
+      other instanceof AppActorRemoteConfigs && appActorModelEquals(this, other)
+    );
   }
 
   static fromJson(json: JsonObject): AppActorRemoteConfigs {
@@ -2511,11 +2611,10 @@ export class AppActor {
     }
 
     const placement = normalizePlacement(options.placement);
+    const offeringId = options.offeringId ?? pkg.offeringId;
     const payload: JsonObject = {
       package_id: pkg.id,
-      ...(options.offeringId ?? pkg.offeringId
-        ? { offering_id: options.offeringId ?? pkg.offeringId }
-        : {}),
+      ...(offeringId != null ? { offering_id: offeringId } : {}),
       ...(options.oldPurchaseToken
         ? { old_purchase_token: options.oldPurchaseToken }
         : {}),
