@@ -194,6 +194,24 @@ function requireString(value: unknown, fieldName: string): string {
   return value;
 }
 
+function optionalString(value: unknown, fieldName: string): string | undefined {
+  return value == null ? undefined : requireString(value, fieldName);
+}
+
+function requireBoolean(value: unknown, fieldName: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new Error(`${fieldName} must be a boolean.`);
+  }
+  return value;
+}
+
+function optionalBoolean(
+  value: unknown,
+  fieldName: string
+): boolean | undefined {
+  return value == null ? undefined : requireBoolean(value, fieldName);
+}
+
 function requireInteger(value: unknown, fieldName: string): number {
   const integerValue = asInteger(value);
   if (integerValue == null) {
@@ -1322,13 +1340,41 @@ export class AppActorError extends Error {
     return this.detail?.includes('transient=true') === true;
   }
 
+  get isNotConfigured(): boolean {
+    return this.code === AppActorError.codeNotConfigured;
+  }
+
+  get isNetwork(): boolean {
+    return this.code === AppActorError.codeNetwork;
+  }
+
+  get isServer(): boolean {
+    return this.code === AppActorError.codeServer;
+  }
+
+  get isInvalidOffer(): boolean {
+    return this.code === AppActorError.codeInvalidOffer;
+  }
+
+  get isPurchaseIneligible(): boolean {
+    return this.code === AppActorError.codePurchaseIneligible;
+  }
+
+  get isPurchaseFailed(): boolean {
+    return this.code === AppActorError.codePurchaseFailed;
+  }
+
+  get isSignatureVerification(): boolean {
+    return this.code === AppActorError.codeSignatureVerification;
+  }
+
   static fromJson(json: JsonObject): AppActorError {
     return new AppActorError({
       code: optionalInteger(json.code, 'code') ?? 0,
-      message: asString(json.message) ?? 'Unknown error',
-      detail: asString(json.detail),
-      requestId: asString(json.request_id),
-      scope: asString(json.scope),
+      message: optionalString(json.message, 'message') ?? 'Unknown error',
+      detail: optionalString(json.detail, 'detail'),
+      requestId: optionalString(json.request_id, 'request_id'),
+      scope: optionalString(json.scope, 'scope'),
       retryAfterSeconds: optionalNumber(
         json.retry_after_seconds,
         'retry_after_seconds'
@@ -1704,16 +1750,16 @@ export class AppActorSdkLogEvent {
   ) {}
 
   static fromJson(json: JsonObject): AppActorSdkLogEvent {
-    const rawTimestamp = asString(json.timestamp);
+    const rawTimestamp = optionalString(json.timestamp, 'timestamp');
     const timestamp =
       rawTimestamp != null && !Number.isNaN(Date.parse(rawTimestamp))
         ? new Date(rawTimestamp)
         : null;
 
     return new AppActorSdkLogEvent(
-      asString(json.level) ?? '',
-      asString(json.message) ?? '',
-      asString(json.category) ?? '',
+      optionalString(json.level, 'level') ?? '',
+      optionalString(json.message, 'message') ?? '',
+      optionalString(json.category, 'category') ?? '',
       timestamp
     );
   }
@@ -1727,8 +1773,8 @@ export class AppActorStorefront {
 
   static fromJson(json: JsonObject): AppActorStorefront {
     return new AppActorStorefront(
-      parseStore(json.store),
-      asString(json.country_code)
+      parseStore(optionalString(json.store, 'store')),
+      optionalString(json.country_code, 'country_code')
     );
   }
 }
@@ -1744,14 +1790,16 @@ export class AppActorAsaDiagnostics {
 
   static fromJson(json: JsonObject): AppActorAsaDiagnostics {
     return new AppActorAsaDiagnostics(
-      asBoolean(json.attribution_completed) ?? false,
+      optionalBoolean(json.attribution_completed, 'attribution_completed') ??
+        false,
       optionalInteger(
         json.pending_purchase_event_count,
         'pending_purchase_event_count'
       ) ?? 0,
-      asBoolean(json.debug_mode) ?? false,
-      asBoolean(json.auto_track_purchases) ?? false,
-      asBoolean(json.track_in_sandbox) ?? false
+      optionalBoolean(json.debug_mode, 'debug_mode') ?? false,
+      optionalBoolean(json.auto_track_purchases, 'auto_track_purchases') ??
+        false,
+      optionalBoolean(json.track_in_sandbox, 'track_in_sandbox') ?? false
     );
   }
 }
@@ -1776,13 +1824,15 @@ export class AppActorExperimentAssignment {
 
   static fromJson(json: JsonObject): AppActorExperimentAssignment {
     return new AppActorExperimentAssignment(
-      asString(json.experiment_id) ?? '',
-      asString(json.experiment_key) ?? '',
-      asString(json.variant_id) ?? '',
-      asString(json.variant_key) ?? '',
+      optionalString(json.experiment_id, 'experiment_id') ?? '',
+      optionalString(json.experiment_key, 'experiment_key') ?? '',
+      optionalString(json.variant_id, 'variant_id') ?? '',
+      optionalString(json.variant_key, 'variant_key') ?? '',
       json.payload,
-      parseConfigValueType(json.value_type ?? 'string'),
-      asString(json.assigned_at) ?? ''
+      parseConfigValueType(
+        optionalString(json.value_type, 'value_type') ?? 'string'
+      ),
+      optionalString(json.assigned_at, 'assigned_at') ?? ''
     );
   }
 }
@@ -1827,14 +1877,14 @@ export class AppActorReceiptPipelineEvent {
 
   static fromJson(json: JsonObject): AppActorReceiptPipelineEvent {
     return new AppActorReceiptPipelineEvent(
-      asString(json.type) ?? '',
-      asString(json.transaction_id),
-      asString(json.product_id) ?? '',
-      asString(json.app_user_id) ?? '',
+      optionalString(json.type, 'type') ?? '',
+      optionalString(json.transaction_id, 'transaction_id'),
+      optionalString(json.product_id, 'product_id') ?? '',
+      optionalString(json.app_user_id, 'app_user_id') ?? '',
       optionalInteger(json.retry_count, 'retry_count'),
-      asString(json.next_attempt_at),
-      asString(json.error_code),
-      asString(json.key)
+      optionalString(json.next_attempt_at, 'next_attempt_at'),
+      optionalString(json.error_code, 'error_code'),
+      optionalString(json.key, 'key')
     );
   }
 }
@@ -1849,10 +1899,10 @@ export class AppActorPurchaseIntent {
 
   static fromJson(json: JsonObject): AppActorPurchaseIntent {
     return new AppActorPurchaseIntent(
-      asString(json.intent_id) ?? '',
-      asString(json.product_id) ?? '',
-      asString(json.offer_id),
-      asString(json.offer_type)
+      optionalString(json.intent_id, 'intent_id') ?? '',
+      optionalString(json.product_id, 'product_id') ?? '',
+      optionalString(json.offer_id, 'offer_id'),
+      optionalString(json.offer_type, 'offer_type')
     );
   }
 }
@@ -1904,35 +1954,51 @@ export class AppActorEntitlementInfo {
 
   static fromJson(json: JsonObject): AppActorEntitlementInfo {
     return new AppActorEntitlementInfo(
-      asString(json.identifier) ?? '',
-      asBoolean(json.is_active) ?? false,
-      asString(json.status),
-      asString(json.product_identifier),
-      asString(json.granted_by),
-      parseOwnershipType(json.ownership_type),
-      parsePeriodType(json.period_type ?? AppActorPeriodType.Normal),
-      asBoolean(json.will_renew) ?? false,
+      optionalString(json.identifier, 'identifier') ?? '',
+      optionalBoolean(json.is_active, 'is_active') ?? false,
+      optionalString(json.status, 'status'),
+      optionalString(json.product_identifier, 'product_identifier'),
+      optionalString(json.granted_by, 'granted_by'),
+      parseOwnershipType(optionalString(json.ownership_type, 'ownership_type')),
+      parsePeriodType(
+        optionalString(json.period_type, 'period_type') ??
+          AppActorPeriodType.Normal
+      ),
+      optionalBoolean(json.will_renew, 'will_renew') ?? false,
       json.subscription_status != null
-        ? parseSubscriptionStatus(json.subscription_status)
+        ? parseSubscriptionStatus(
+            requireString(json.subscription_status, 'subscription_status')
+          )
         : undefined,
-      parseStore(json.store),
-      asString(json.base_plan_id),
-      asString(json.offer_id),
-      asBoolean(json.is_sandbox),
+      parseStore(optionalString(json.store, 'store')),
+      optionalString(json.base_plan_id, 'base_plan_id'),
+      optionalString(json.offer_id, 'offer_id'),
+      optionalBoolean(json.is_sandbox, 'is_sandbox'),
       json.cancellation_reason != null
-        ? parseCancellationReason(json.cancellation_reason)
+        ? parseCancellationReason(
+            requireString(json.cancellation_reason, 'cancellation_reason')
+          )
         : undefined,
-      asString(json.purchase_date),
-      asString(json.starts_at),
-      asString(json.latest_purchase_date),
-      asString(json.original_purchase_date),
-      asString(json.expiration_date),
-      asString(json.grace_period_expires_at),
-      asString(json.billing_issue_detected_at),
-      asString(json.unsubscribe_detected_at),
-      asString(json.renewed_at),
-      asString(json.active_promotional_offer_type),
-      asString(json.active_promotional_offer_id)
+      optionalString(json.purchase_date, 'purchase_date'),
+      optionalString(json.starts_at, 'starts_at'),
+      optionalString(json.latest_purchase_date, 'latest_purchase_date'),
+      optionalString(json.original_purchase_date, 'original_purchase_date'),
+      optionalString(json.expiration_date, 'expiration_date'),
+      optionalString(json.grace_period_expires_at, 'grace_period_expires_at'),
+      optionalString(
+        json.billing_issue_detected_at,
+        'billing_issue_detected_at'
+      ),
+      optionalString(json.unsubscribe_detected_at, 'unsubscribe_detected_at'),
+      optionalString(json.renewed_at, 'renewed_at'),
+      optionalString(
+        json.active_promotional_offer_type,
+        'active_promotional_offer_type'
+      ),
+      optionalString(
+        json.active_promotional_offer_id,
+        'active_promotional_offer_id'
+      )
     );
   }
 }
@@ -1964,29 +2030,39 @@ export class AppActorSubscriptionInfo {
 
   static fromJson(json: JsonObject): AppActorSubscriptionInfo {
     return new AppActorSubscriptionInfo(
-      asString(json.subscription_key) ?? '',
-      asString(json.product_identifier) ?? '',
-      parseStore(json.store),
-      asString(json.base_plan_id),
-      asString(json.offer_id),
-      asBoolean(json.is_active) ?? false,
-      asString(json.expires_date),
-      asString(json.purchase_date),
-      asString(json.starts_at),
-      json.period_type != null ? parsePeriodType(json.period_type) : undefined,
-      asString(json.status),
-      asBoolean(json.auto_renew),
-      asBoolean(json.is_sandbox),
-      asString(json.grace_period_expires_at),
-      asString(json.unsubscribe_detected_at),
-      json.cancellation_reason != null
-        ? parseCancellationReason(json.cancellation_reason)
+      optionalString(json.subscription_key, 'subscription_key') ?? '',
+      optionalString(json.product_identifier, 'product_identifier') ?? '',
+      parseStore(optionalString(json.store, 'store')),
+      optionalString(json.base_plan_id, 'base_plan_id'),
+      optionalString(json.offer_id, 'offer_id'),
+      optionalBoolean(json.is_active, 'is_active') ?? false,
+      optionalString(json.expires_date, 'expires_date'),
+      optionalString(json.purchase_date, 'purchase_date'),
+      optionalString(json.starts_at, 'starts_at'),
+      json.period_type != null
+        ? parsePeriodType(requireString(json.period_type, 'period_type'))
         : undefined,
-      asString(json.renewed_at),
-      asString(json.original_transaction_id),
-      asString(json.latest_transaction_id),
-      asString(json.active_promotional_offer_type),
-      asString(json.active_promotional_offer_id)
+      optionalString(json.status, 'status'),
+      optionalBoolean(json.auto_renew, 'auto_renew'),
+      optionalBoolean(json.is_sandbox, 'is_sandbox'),
+      optionalString(json.grace_period_expires_at, 'grace_period_expires_at'),
+      optionalString(json.unsubscribe_detected_at, 'unsubscribe_detected_at'),
+      json.cancellation_reason != null
+        ? parseCancellationReason(
+            requireString(json.cancellation_reason, 'cancellation_reason')
+          )
+        : undefined,
+      optionalString(json.renewed_at, 'renewed_at'),
+      optionalString(json.original_transaction_id, 'original_transaction_id'),
+      optionalString(json.latest_transaction_id, 'latest_transaction_id'),
+      optionalString(
+        json.active_promotional_offer_type,
+        'active_promotional_offer_type'
+      ),
+      optionalString(
+        json.active_promotional_offer_id,
+        'active_promotional_offer_id'
+      )
     );
   }
 }
@@ -2007,16 +2083,22 @@ export class AppActorNonSubscription {
 
   static fromJson(json: JsonObject): AppActorNonSubscription {
     return new AppActorNonSubscription(
-      asString(json.product_identifier) ?? '',
-      parseStore(json.store),
-      asString(json.base_plan_id),
-      asString(json.offer_id),
-      asString(json.original_transaction_identifier),
-      asString(json.purchase_date),
-      asString(json.store_transaction_identifier),
-      asBoolean(json.is_sandbox),
-      asBoolean(json.is_consumable),
-      asBoolean(json.is_refund)
+      optionalString(json.product_identifier, 'product_identifier') ?? '',
+      parseStore(optionalString(json.store, 'store')),
+      optionalString(json.base_plan_id, 'base_plan_id'),
+      optionalString(json.offer_id, 'offer_id'),
+      optionalString(
+        json.original_transaction_identifier,
+        'original_transaction_identifier'
+      ),
+      optionalString(json.purchase_date, 'purchase_date'),
+      optionalString(
+        json.store_transaction_identifier,
+        'store_transaction_identifier'
+      ),
+      optionalBoolean(json.is_sandbox, 'is_sandbox'),
+      optionalBoolean(json.is_consumable, 'is_consumable'),
+      optionalBoolean(json.is_refund, 'is_refund')
     );
   }
 }
@@ -2080,14 +2162,14 @@ export class AppActorCustomerInfo {
             requireRecord(json.token_balance, 'token_balance')
           )
         : undefined,
-      asString(json.snapshot_date),
-      asString(json.app_user_id),
-      asString(json.request_id),
-      asString(json.request_date),
-      asString(json.first_seen),
-      asString(json.last_seen),
-      asString(json.management_url),
-      asBoolean(json.is_computed_offline) ?? false,
+      optionalString(json.snapshot_date, 'snapshot_date'),
+      optionalString(json.app_user_id, 'app_user_id'),
+      optionalString(json.request_id, 'request_id'),
+      optionalString(json.request_date, 'request_date'),
+      optionalString(json.first_seen, 'first_seen'),
+      optionalString(json.last_seen, 'last_seen'),
+      optionalString(json.management_url, 'management_url'),
+      optionalBoolean(json.is_computed_offline, 'is_computed_offline') ?? false,
       mapStringLists(json.product_entitlements),
       new Set(
         optionalStringArray(
@@ -2095,7 +2177,9 @@ export class AppActorCustomerInfo {
           'active_entitlement_keys'
         )
       ),
-      parseVerificationResult(json.verification)
+      parseVerificationResult(
+        optionalString(json.verification, 'verification')
+      )
     );
   }
 }
@@ -2149,26 +2233,26 @@ export class AppActorPackage {
 
   static fromJson(json: JsonObject): AppActorPackage {
     return new AppActorPackage(
-      asString(json.id) ?? '',
-      parsePackageType(json.package_type),
-      asString(json.product_id) ?? '',
-      asString(json.store_product_id),
-      parseProductType(json.product_type),
-      parseStore(json.store),
-      asString(json.base_plan_id),
-      asString(json.offer_id),
-      asString(json.localized_price_string),
+      optionalString(json.id, 'id') ?? '',
+      parsePackageType(optionalString(json.package_type, 'package_type')),
+      optionalString(json.product_id, 'product_id') ?? '',
+      optionalString(json.store_product_id, 'store_product_id'),
+      parseProductType(optionalString(json.product_type, 'product_type')),
+      parseStore(optionalString(json.store, 'store')),
+      optionalString(json.base_plan_id, 'base_plan_id'),
+      optionalString(json.offer_id, 'offer_id'),
+      optionalString(json.localized_price_string, 'localized_price_string'),
       optionalInteger(json.price_amount_micros, 'price_amount_micros'),
       optionalNumber(json.price, 'price'),
-      asString(json.currency_code),
-      asString(json.display_name),
-      asString(json.product_name),
-      asString(json.product_description),
+      optionalString(json.currency_code, 'currency_code'),
+      optionalString(json.display_name, 'display_name'),
+      optionalString(json.product_name, 'product_name'),
+      optionalString(json.product_description, 'product_description'),
       mapStringRecord(json.metadata, 'metadata'),
       optionalInteger(json.token_amount, 'token_amount'),
       optionalInteger(json.position, 'position'),
-      asString(json.server_id),
-      asString(json.offering_id)
+      optionalString(json.server_id, 'server_id'),
+      optionalString(json.offering_id, 'offering_id')
     );
   }
 }
@@ -2225,10 +2309,10 @@ export class AppActorOffering {
 
   static fromJson(json: JsonObject): AppActorOffering {
     return new AppActorOffering(
-      asString(json.id) ?? '',
-      asString(json.display_name) ?? '',
-      asBoolean(json.is_current) ?? false,
-      asString(json.lookup_key),
+      optionalString(json.id, 'id') ?? '',
+      optionalString(json.display_name, 'display_name') ?? '',
+      optionalBoolean(json.is_current, 'is_current') ?? false,
+      optionalString(json.lookup_key, 'lookup_key'),
       mapStringRecord(json.metadata, 'metadata'),
       Array.isArray(json.packages)
         ? json.packages.map((entry) =>
@@ -2268,7 +2352,9 @@ export class AppActorOfferings {
         : null,
       mapValues(json.all, AppActorOffering.fromJson),
       mapStringLists(json.product_entitlements),
-      parseVerificationResult(json.verification)
+      parseVerificationResult(
+        optionalString(json.verification, 'verification')
+      )
     );
   }
 }
@@ -2285,12 +2371,12 @@ export class AppActorPurchaseInfo {
 
   static fromJson(json: JsonObject): AppActorPurchaseInfo {
     return new AppActorPurchaseInfo(
-      parseStore(json.store),
-      asString(json.product_id),
-      asString(json.transaction_id),
-      asString(json.original_transaction_id),
-      asString(json.purchase_date),
-      asBoolean(json.is_sandbox)
+      parseStore(optionalString(json.store, 'store')),
+      optionalString(json.product_id, 'product_id'),
+      optionalString(json.transaction_id, 'transaction_id'),
+      optionalString(json.original_transaction_id, 'original_transaction_id'),
+      optionalString(json.purchase_date, 'purchase_date'),
+      optionalBoolean(json.is_sandbox, 'is_sandbox')
     );
   }
 }
@@ -2326,7 +2412,7 @@ export class AppActorPurchaseResult {
 
   static fromJson(json: JsonObject): AppActorPurchaseResult {
     return new AppActorPurchaseResult(
-      parsePurchaseStatus(json.status),
+      parsePurchaseStatus(optionalString(json.status, 'status')),
       json.customer_info != null
         ? AppActorCustomerInfo.fromJson(
             requireRecord(json.customer_info, 'customer_info')
@@ -2369,9 +2455,11 @@ export class AppActorRemoteConfigItem {
 
   static fromJson(json: JsonObject): AppActorRemoteConfigItem {
     return new AppActorRemoteConfigItem(
-      asString(json.key) ?? '',
+      optionalString(json.key, 'key') ?? '',
       json.value,
-      parseConfigValueType(json.value_type ?? 'string')
+      parseConfigValueType(
+        optionalString(json.value_type, 'value_type') ?? 'string'
+      )
     );
   }
 }
@@ -2408,7 +2496,7 @@ export class AppActorDeferredPurchaseEvent {
 
   static fromJson(json: JsonObject): AppActorDeferredPurchaseEvent {
     return new AppActorDeferredPurchaseEvent(
-      asString(json.product_id) ?? '',
+      optionalString(json.product_id, 'product_id') ?? '',
       AppActorCustomerInfo.fromJson(
         json.customer_info == null
           ? {}
@@ -2566,7 +2654,7 @@ export class AppActor {
 
   async sdkVersion(): Promise<string> {
     const response = await execute(METHOD_NAMES.getSdkVersion);
-    return asString(response.value) ?? '';
+    return optionalString(response.value, 'value') ?? '';
   }
 
   async setLogLevel(level: AppActorLogLevel): Promise<void> {
@@ -2594,7 +2682,7 @@ export class AppActor {
 
   async getAppUserId(): Promise<string | null> {
     const response = await execute(METHOD_NAMES.getAppUserId);
-    return asString(response.value) ?? null;
+    return optionalString(response.value, 'value') ?? null;
   }
 
   async getIsAnonymous(): Promise<boolean> {
@@ -2733,7 +2821,9 @@ export class AppActor {
     const values = Array.isArray(response.value) ? response.value : [];
     return new Set(
       values
-        .map((entry) => parseStoreCapability(entry))
+        .map((entry, index) =>
+          parseStoreCapability(requireString(entry, `value[${index}]`))
+        )
         .filter((entry): entry is AppActorStoreCapability => entry != null)
     );
   }

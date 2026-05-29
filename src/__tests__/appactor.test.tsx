@@ -1072,6 +1072,44 @@ describe('AppActor React Native', () => {
     expect(error.scope).toBe('ip');
     expect(error.retryAfterSeconds).toBe(30);
     expect(error.isTransient).toBe(true);
+    expect(error.isServer).toBe(true);
+    expect(error.isNetwork).toBe(false);
+    expect(
+      AppActorError.fromJson({
+        code: AppActorError.codeNotConfigured,
+        message: 'Not configured',
+      }).isNotConfigured
+    ).toBe(true);
+    expect(
+      AppActorError.fromJson({
+        code: AppActorError.codeNetwork,
+        message: 'Network',
+      }).isNetwork
+    ).toBe(true);
+    expect(
+      AppActorError.fromJson({
+        code: AppActorError.codeInvalidOffer,
+        message: 'Invalid offer',
+      }).isInvalidOffer
+    ).toBe(true);
+    expect(
+      AppActorError.fromJson({
+        code: AppActorError.codePurchaseIneligible,
+        message: 'Ineligible',
+      }).isPurchaseIneligible
+    ).toBe(true);
+    expect(
+      AppActorError.fromJson({
+        code: AppActorError.codePurchaseFailed,
+        message: 'Purchase failed',
+      }).isPurchaseFailed
+    ).toBe(true);
+    expect(
+      AppActorError.fromJson({
+        code: AppActorError.codeSignatureVerification,
+        message: 'Signature failed',
+      }).isSignatureVerification
+    ).toBe(true);
     expect(() =>
       AppActorError.fromJson({
         message: 'Rate limited',
@@ -1194,6 +1232,76 @@ describe('AppActor React Native', () => {
     expect(pkg.price).toBe(1.99);
     expect(pkg.tokenAmount).toBe(100);
     expect(pkg.position).toBe(3);
+  });
+
+  it('throws for malformed scalar native payload fields like Flutter casts', async () => {
+    expect(() =>
+      AppActorError.fromJson({
+        code: 2005,
+        message: 42,
+      })
+    ).toThrow('message must be a string.');
+    expect(() =>
+      AppActorAsaDiagnostics.fromJson({
+        attribution_completed: 'true',
+      })
+    ).toThrow('attribution_completed must be a boolean.');
+    expect(() =>
+      AppActorCustomerInfo.fromJson({
+        app_user_id: 42,
+      })
+    ).toThrow('app_user_id must be a string.');
+    expect(() =>
+      AppActorCustomerInfo.fromJson({
+        is_computed_offline: 'false',
+      })
+    ).toThrow('is_computed_offline must be a boolean.');
+    expect(() =>
+      AppActorPackage.fromJson({
+        id: 'monthly',
+        product_id: 'com.app.monthly',
+        localized_price_string: 99,
+      })
+    ).toThrow('localized_price_string must be a string.');
+    expect(() =>
+      AppActorPackage.fromJson({
+        id: 'monthly',
+        product_id: 'com.app.monthly',
+        store: 1,
+      })
+    ).toThrow('store must be a string.');
+    expect(() =>
+      AppActorPurchaseResult.fromJson({
+        status: 1,
+      })
+    ).toThrow('status must be a string.');
+    expect(() =>
+      AppActorRemoteConfigItem.fromJson({
+        key: 42,
+      })
+    ).toThrow('key must be a string.');
+    expect(() =>
+      AppActorRemoteConfigItem.fromJson({
+        key: 'headline',
+        value_type: 42,
+      })
+    ).toThrow('value_type must be a string.');
+    expect(() =>
+      AppActorStorefront.fromJson({
+        country_code: 90,
+      })
+    ).toThrow('country_code must be a string.');
+
+    mockExecute.mockResolvedValue(success(42));
+    await expect(AppActor.instance.sdkVersion()).rejects.toThrow(
+      'value must be a string.'
+    );
+
+    (Platform as { OS: string }).OS = 'android';
+    mockExecute.mockResolvedValue(success({ value: ['in_app_products', 42] }));
+    await expect(AppActor.instance.getStoreCapabilities()).rejects.toThrow(
+      'value[1] must be a string.'
+    );
   });
 
   it('throws for malformed nested model payloads like Flutter casts', () => {
