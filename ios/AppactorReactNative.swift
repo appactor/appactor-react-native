@@ -21,9 +21,17 @@ final class AppactorReactNative: RCTEventEmitter {
     }
 
     deinit {
-        AppActorPlugin.shared.delegate = nil
-        runOnMainActor {
-            AppActorPlugin.shared.stopEventListening()
+        // Only release the shared plugin's delegate/event-listening if this
+        // instance still owns it. On bridge recreation (RN dev reload, or
+        // brownfield/multi-bridge mounts) a new instance may have already
+        // registered itself as the delegate before this old instance is
+        // deallocated; tearing it down here would clobber the live registration
+        // and silently stop event delivery to JS.
+        if AppActorPlugin.shared.delegate === self {
+            AppActorPlugin.shared.delegate = nil
+            runOnMainActor {
+                AppActorPlugin.shared.stopEventListening()
+            }
         }
     }
 

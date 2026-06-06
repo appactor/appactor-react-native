@@ -359,6 +359,29 @@ async function execute(
   }
 }
 
+/**
+ * Detects the "native returned no cached value" envelope for the cached
+ * getters. When there is no cache, native returns `AppActorPluginResult.nullData`
+ * (`{"success": null}`), which `parseNativeEnvelope` maps to `{ value: null }`.
+ * A real cached payload always carries its DTO's guaranteed-present keys, so a
+ * cache hit is detected by the presence of any of those keys rather than by a
+ * single optional field (which may be omitted by the iOS encoder's
+ * `encodeIfPresent`).
+ *
+ * Returns the response when a cached value is present, or `null` on a cache miss.
+ */
+function unwrapCachedResponse(
+  response: JsonObject,
+  presentKeys: readonly string[]
+): JsonObject | null {
+  const hasValue = response.value != null;
+  const hasPresentKey = presentKeys.some((key) => key in response);
+  if (!hasValue && !hasPresentKey) {
+    return null;
+  }
+  return response;
+}
+
 function normalizePlacement(placement?: string | null): string | undefined {
   if (placement == null) {
     return undefined;
@@ -1463,6 +1486,33 @@ export class AppActorAttributeValue {
   }
 }
 
+export interface AppActorAttributionOptions {
+  provider: AppActorAttributionProvider;
+  providerOverride?: string;
+  status?: AppActorAttributionStatus;
+  providerName?: string;
+  campaignId?: string;
+  campaignName?: string;
+  adGroupId?: string;
+  adGroupName?: string;
+  adId?: string;
+  adName?: string;
+  creativeId?: string;
+  creativeName?: string;
+  keywordId?: string;
+  keyword?: string;
+  network?: string;
+  source?: string;
+  medium?: string;
+  campaign?: string;
+  adGroup?: string;
+  ad?: string;
+  creative?: string;
+  clickId?: string;
+  attributedAt?: Date;
+  metadata?: AppActorKeyValueInput;
+}
+
 export class AppActorAttribution {
   readonly provider: AppActorAttributionProvider;
   readonly providerOverride?: string;
@@ -1489,196 +1539,40 @@ export class AppActorAttribution {
   readonly attributedAt?: Date;
   readonly metadata: AppActorKeyValueInput;
 
-  constructor(options: {
-    provider: AppActorAttributionProvider;
-    providerOverride?: string;
-    status?: AppActorAttributionStatus;
-    providerName?: string;
-    campaignId?: string;
-    campaignName?: string;
-    adGroupId?: string;
-    adGroupName?: string;
-    adId?: string;
-    adName?: string;
-    creativeId?: string;
-    creativeName?: string;
-    keywordId?: string;
-    keyword?: string;
-    network?: string;
-    source?: string;
-    medium?: string;
-    campaign?: string;
-    adGroup?: string;
-    ad?: string;
-    creative?: string;
-    clickId?: string;
-    attributedAt?: Date;
-    metadata?: AppActorKeyValueInput;
-  });
-  constructor(
-    provider: AppActorAttributionProvider,
-    providerOverride?: string,
-    status?: AppActorAttributionStatus,
-    providerName?: string,
-    campaignId?: string,
-    campaignName?: string,
-    adGroupId?: string,
-    adGroupName?: string,
-    adId?: string,
-    adName?: string,
-    creativeId?: string,
-    creativeName?: string,
-    keywordId?: string,
-    keyword?: string,
-    network?: string,
-    source?: string,
-    medium?: string,
-    campaign?: string,
-    adGroup?: string,
-    ad?: string,
-    creative?: string,
-    clickId?: string,
-    attributedAt?: Date,
-    metadata?: AppActorKeyValueInput
-  );
-  constructor(
-    providerOrOptions:
-      | AppActorAttributionProvider
-      | {
-          provider: AppActorAttributionProvider;
-          providerOverride?: string;
-          status?: AppActorAttributionStatus;
-          providerName?: string;
-          campaignId?: string;
-          campaignName?: string;
-          adGroupId?: string;
-          adGroupName?: string;
-          adId?: string;
-          adName?: string;
-          creativeId?: string;
-          creativeName?: string;
-          keywordId?: string;
-          keyword?: string;
-          network?: string;
-          source?: string;
-          medium?: string;
-          campaign?: string;
-          adGroup?: string;
-          ad?: string;
-          creative?: string;
-          clickId?: string;
-          attributedAt?: Date;
-          metadata?: AppActorKeyValueInput;
-        },
-    providerOverride?: string,
-    status?: AppActorAttributionStatus,
-    providerName?: string,
-    campaignId?: string,
-    campaignName?: string,
-    adGroupId?: string,
-    adGroupName?: string,
-    adId?: string,
-    adName?: string,
-    creativeId?: string,
-    creativeName?: string,
-    keywordId?: string,
-    keyword?: string,
-    network?: string,
-    source?: string,
-    medium?: string,
-    campaign?: string,
-    adGroup?: string,
-    ad?: string,
-    creative?: string,
-    clickId?: string,
-    attributedAt?: Date,
-    metadata: AppActorKeyValueInput = {}
-  ) {
-    if (isRecord(providerOrOptions) && typeof providerOrOptions.provider === 'string') {
-      this.provider = providerOrOptions.provider as AppActorAttributionProvider;
-      this.providerOverride = asString(providerOrOptions.providerOverride);
-      this.status = providerOrOptions.status as
-        | AppActorAttributionStatus
-        | undefined;
-      this.providerName = asString(providerOrOptions.providerName);
-      this.campaignId = asString(providerOrOptions.campaignId);
-      this.campaignName = asString(providerOrOptions.campaignName);
-      this.adGroupId = asString(providerOrOptions.adGroupId);
-      this.adGroupName = asString(providerOrOptions.adGroupName);
-      this.adId = asString(providerOrOptions.adId);
-      this.adName = asString(providerOrOptions.adName);
-      this.creativeId = asString(providerOrOptions.creativeId);
-      this.creativeName = asString(providerOrOptions.creativeName);
-      this.keywordId = asString(providerOrOptions.keywordId);
-      this.keyword = asString(providerOrOptions.keyword);
-      this.network = asString(providerOrOptions.network);
-      this.source = asString(providerOrOptions.source);
-      this.medium = asString(providerOrOptions.medium);
-      this.campaign = asString(providerOrOptions.campaign);
-      this.adGroup = asString(providerOrOptions.adGroup);
-      this.ad = asString(providerOrOptions.ad);
-      this.creative = asString(providerOrOptions.creative);
-      this.clickId = asString(providerOrOptions.clickId);
-      this.attributedAt =
-        providerOrOptions.attributedAt instanceof Date
-          ? providerOrOptions.attributedAt
-          : undefined;
-      this.metadata = providerOrOptions.metadata ?? {};
-      return;
-    }
-
-    this.provider = providerOrOptions as AppActorAttributionProvider;
-    this.providerOverride = providerOverride;
-    this.status = status;
-    this.providerName = providerName;
-    this.campaignId = campaignId;
-    this.campaignName = campaignName;
-    this.adGroupId = adGroupId;
-    this.adGroupName = adGroupName;
-    this.adId = adId;
-    this.adName = adName;
-    this.creativeId = creativeId;
-    this.creativeName = creativeName;
-    this.keywordId = keywordId;
-    this.keyword = keyword;
-    this.network = network;
-    this.source = source;
-    this.medium = medium;
-    this.campaign = campaign;
-    this.adGroup = adGroup;
-    this.ad = ad;
-    this.creative = creative;
-    this.clickId = clickId;
-    this.attributedAt = attributedAt;
-    this.metadata = metadata;
+  constructor(options: AppActorAttributionOptions) {
+    this.provider = options.provider;
+    this.providerOverride = asString(options.providerOverride);
+    this.status = options.status;
+    this.providerName = asString(options.providerName);
+    this.campaignId = asString(options.campaignId);
+    this.campaignName = asString(options.campaignName);
+    this.adGroupId = asString(options.adGroupId);
+    this.adGroupName = asString(options.adGroupName);
+    this.adId = asString(options.adId);
+    this.adName = asString(options.adName);
+    this.creativeId = asString(options.creativeId);
+    this.creativeName = asString(options.creativeName);
+    this.keywordId = asString(options.keywordId);
+    this.keyword = asString(options.keyword);
+    this.network = asString(options.network);
+    this.source = asString(options.source);
+    this.medium = asString(options.medium);
+    this.campaign = asString(options.campaign);
+    this.adGroup = asString(options.adGroup);
+    this.ad = asString(options.ad);
+    this.creative = asString(options.creative);
+    this.clickId = asString(options.clickId);
+    this.attributedAt =
+      options.attributedAt instanceof Date ? options.attributedAt : undefined;
+    this.metadata = options.metadata ?? {};
   }
 
   static customProvider(
     provider: string,
-    options: {
-      status?: AppActorAttributionStatus;
-      providerName?: string;
-      campaignId?: string;
-      campaignName?: string;
-      adGroupId?: string;
-      adGroupName?: string;
-      adId?: string;
-      adName?: string;
-      creativeId?: string;
-      creativeName?: string;
-      keywordId?: string;
-      keyword?: string;
-      network?: string;
-      source?: string;
-      medium?: string;
-      campaign?: string;
-      adGroup?: string;
-      ad?: string;
-      creative?: string;
-      clickId?: string;
-      attributedAt?: Date;
-      metadata?: AppActorKeyValueInput;
-    } = {}
+    options: Omit<
+      AppActorAttributionOptions,
+      'provider' | 'providerOverride'
+    > = {}
   ): AppActorAttribution {
     return new AppActorAttribution({
       provider: AppActorAttributionProvider.Custom,
@@ -2530,7 +2424,21 @@ class AppActorEventStream<T> {
         if (!payload) {
           return;
         }
-        listener(this.decoder(payload));
+        let decoded: T;
+        try {
+          decoded = this.decoder(payload);
+        } catch (error) {
+          if (isDevelopmentRuntime()) {
+            const logger =
+              typeof console.debug === 'function' ? console.debug : console.log;
+            logger(
+              `[AppActor] Dropped malformed "${this.expectedName}" event: ` +
+                (error instanceof Error ? error.message : String(error))
+            );
+          }
+          return;
+        }
+        listener(decoded);
       }
     );
 
@@ -2694,8 +2602,13 @@ export class AppActor {
     pkg: AppActorPackage,
     options: PurchasePackageOptions = {}
   ): Promise<AppActorPurchaseResult> {
-    if (options.quantity != null && options.quantity < 1) {
-      throw new Error('Purchase quantity must be at least 1.');
+    if (options.quantity != null) {
+      if (!Number.isInteger(options.quantity)) {
+        throw new Error('Purchase quantity must be an integer.');
+      }
+      if (options.quantity < 1) {
+        throw new Error('Purchase quantity must be at least 1.');
+      }
     }
 
     const placement = normalizePlacement(options.placement);
@@ -2774,18 +2687,22 @@ export class AppActor {
 
   async getCachedOfferings(): Promise<AppActorOfferings | null> {
     const response = await execute(METHOD_NAMES.getCachedOfferings);
-    if (response.value == null && !('current' in response)) {
+    // 'current' is optional and omitted by the iOS encoder when no offering is
+    // flagged current, so probe on the always-present 'all'/'verification' keys.
+    const cached = unwrapCachedResponse(response, ['all', 'verification']);
+    if (cached == null) {
       return null;
     }
-    return AppActorOfferings.fromJson(response);
+    return AppActorOfferings.fromJson(cached);
   }
 
   async getCachedRemoteConfigs(): Promise<AppActorRemoteConfigs | null> {
     const response = await execute(METHOD_NAMES.getCachedRemoteConfigs);
-    if (response.value == null && !('items' in response)) {
+    const cached = unwrapCachedResponse(response, ['items']);
+    if (cached == null) {
       return null;
     }
-    return AppActorRemoteConfigs.fromJson(response);
+    return AppActorRemoteConfigs.fromJson(cached);
   }
 
   async getCachedCustomerInfo(): Promise<AppActorCustomerInfo> {
@@ -2807,10 +2724,11 @@ export class AppActor {
       return null;
     }
     const response = await execute(METHOD_NAMES.getStorefront);
-    if (response.value == null && !('store' in response)) {
+    const cached = unwrapCachedResponse(response, ['store']);
+    if (cached == null) {
       return null;
     }
-    return AppActorStorefront.fromJson(response);
+    return AppActorStorefront.fromJson(cached);
   }
 
   async getStoreCapabilities(): Promise<Set<AppActorStoreCapability>> {
@@ -3002,10 +2920,11 @@ export class AppActor {
 
   async getRemoteConfig(key: string): Promise<AppActorRemoteConfigItem | null> {
     const response = await execute(METHOD_NAMES.getRemoteConfig, { key });
-    if (response.value == null && !('key' in response)) {
+    const cached = unwrapCachedResponse(response, ['key', 'value_type']);
+    if (cached == null) {
       return null;
     }
-    return AppActorRemoteConfigItem.fromJson(response);
+    return AppActorRemoteConfigItem.fromJson(cached);
   }
 
   async getRemoteConfigBool(key: string): Promise<boolean | null> {
@@ -3040,10 +2959,15 @@ export class AppActor {
       throw new UnsupportedError('getAsaDiagnostics is iOS only');
     }
     const response = await execute(METHOD_NAMES.getAsaDiagnostics);
-    if (response.value == null && !('attribution_completed' in response)) {
+    const cached = unwrapCachedResponse(response, [
+      'attribution_completed',
+      'pending_purchase_event_count',
+      'debug_mode',
+    ]);
+    if (cached == null) {
       return null;
     }
-    return AppActorAsaDiagnostics.fromJson(response);
+    return AppActorAsaDiagnostics.fromJson(cached);
   }
 
   async getPendingAsaPurchaseEventCount(): Promise<number> {

@@ -16,12 +16,14 @@ class AppactorReactNativeModule(
 ) : ReactContextBaseJavaModule(reactContext), LifecycleEventListener {
   private var invalidated = false
 
+  private val eventListener = PluginEventListener { eventName, jsonPayload ->
+    emitEvent(eventName, jsonPayload)
+  }
+
   init {
     reactApplicationContext.addLifecycleEventListener(this)
     AppActorPlugin.setContext(reactApplicationContext)
-    AppActorPlugin.eventListener = PluginEventListener { eventName, jsonPayload ->
-      emitEvent(eventName, jsonPayload)
-    }
+    AppActorPlugin.eventListener = eventListener
     syncCurrentActivity()
     AppActorPlugin.startEventListening()
   }
@@ -40,11 +42,18 @@ class AppactorReactNativeModule(
 
   override fun onHostResume() {
     syncCurrentActivity()
+    // Re-assert this instance's listener. The slot is a process-global single
+    // slot, so a sibling context tearing down could have nulled it; without
+    // this, all SDK events would be silently dropped until app restart.
+    AppActorPlugin.eventListener = eventListener
     AppActorPlugin.startEventListening()
   }
 
   override fun onHostPause() {
-    AppActorPlugin.setActivity(null)
+    // Do not clear the activity on pause. Google Play Billing only needs a
+    // valid (not necessarily resumed) Activity to launch the billing flow, and
+    // the WeakReference already prevents leaks. Clearing here would reject a
+    // purchase dispatched during a transient pause with MISSING_ACTIVITY.
   }
 
   override fun onHostDestroy() {
@@ -54,8 +63,12 @@ class AppactorReactNativeModule(
   override fun invalidate() {
     invalidated = true
     reactApplicationContext.removeLifecycleEventListener(this)
-    AppActorPlugin.eventListener = null
-    AppActorPlugin.stopEventListening()
+    // Only clear the global listener if it still points to this instance, so
+    // teardown of one context cannot silence events for a surviving context.
+    if (AppActorPlugin.eventListener === eventListener) {
+      AppActorPlugin.eventListener = null
+      AppActorPlugin.stopEventListening()
+    }
     AppActorPlugin.setActivity(null)
     super.invalidate()
   }
