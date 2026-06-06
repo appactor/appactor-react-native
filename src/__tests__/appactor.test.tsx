@@ -355,6 +355,16 @@ describe('AppActor React Native', () => {
     expect(mockExecute).not.toHaveBeenCalled();
   });
 
+  it('purchasePackage rejects non-integer quantity before native dispatch', async () => {
+    for (const q of [1.5, NaN, Infinity]) {
+      await expect(
+        AppActor.instance.purchasePackage(testPackage(), { quantity: q })
+      ).rejects.toThrow('Purchase quantity must be an integer.');
+    }
+
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
   it('serializes empty-string optional package identifiers when non-null', () => {
     const pkg = testPackage({
       storeProductId: '',
