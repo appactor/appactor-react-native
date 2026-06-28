@@ -29,7 +29,7 @@ Pod::Spec.new do |s|
   s.resource_bundles = {
     'AppactorReactNative_privacy' => ['ios/PrivacyInfo.xcprivacy']
   }
-  s.dependency   'AppActorPlugin', '0.1.11'
+  s.dependency   'AppActorPlugin', '0.1.12'
   s.swift_version = '5.9'
 
   if defined?(install_modules_dependencies)

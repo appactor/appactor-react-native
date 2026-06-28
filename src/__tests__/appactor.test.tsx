@@ -155,7 +155,7 @@ describe('AppActor React Native', () => {
         api_key: 'pk_test_123',
         options: {
           log_level: 'debug',
-          platform_info: { flavor: 'react-native', version: '0.1.0' },
+          platform_info: { flavor: 'react-native', version: '0.1.1' },
         },
       })
     );
@@ -203,7 +203,7 @@ describe('AppActor React Native', () => {
       JSON.stringify({
         api_key: 'pk_android',
         options: {
-          platform_info: { flavor: 'react-native', version: '0.1.0' },
+          platform_info: { flavor: 'react-native', version: '0.1.1' },
         },
       })
     );
@@ -232,7 +232,7 @@ describe('AppActor React Native', () => {
         api_key: 'pk_test_123',
         app_user_id: '',
         options: {
-          platform_info: { flavor: 'react-native', version: '0.1.0' },
+          platform_info: { flavor: 'react-native', version: '0.1.1' },
         },
       })
     );
