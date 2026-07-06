@@ -69,5 +69,5 @@ repositories {
 
 dependencies {
   implementation 'com.facebook.react:react-android'
-  implementation 'com.appactor:appactor-plugin:2.3.12'
+  implementation 'com.appactor:appactor-plugin:2.3.13'
 }
