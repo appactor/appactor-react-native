@@ -67,6 +67,25 @@ const customerInfo = result.customerInfo ?? (await AppActor.instance.getCustomer
 const isPremium = customerInfo.hasActiveEntitlement('premium');
 ```
 
+## Offerings & Experiments
+
+```ts
+// All offerings, or one by its offering key (the dashboard "lookup key")
+const offerings = await AppActor.instance.getOfferings();
+offerings.current;                          // the current offering
+offerings.allOfferings;                     // AppActorOffering[], current first
+offerings.getOffering('onboarding');        // by offeringKey
+const onboarding = await AppActor.instance.getOffering('onboarding'); // fetch + lookup in one call
+
+// Experiments — never null, so no null-checks
+const paywall = await AppActor.instance.getExperiment('paywall_test');
+if (paywall.isVariant('annual_first')) showAnnualFirst();
+paywall.variantKey;                         // 'control', 'annual_first', … or null when not enrolled
+
+const showOnboarding = (await AppActor.instance.getExperiment('has_onboard')).boolValue(true);
+const title = (await AppActor.instance.getExperiment('onboarding_flow')).get('title') ?? 'Welcome';
+```
+
 ## API Overview
 
 The React Native SDK exposes the same major surfaces as Flutter:
@@ -78,13 +97,13 @@ The React Native SDK exposes the same major surfaces as Flutter:
 - Commerce:
   `purchasePackage()`, `restorePurchases()`, `syncPurchases()`, `quietSyncPurchases()`, `drainReceiptQueueAndRefreshCustomer()`
 - Data and cache:
-  `getCustomerInfo()`, `getOfferings()`, `getCachedOfferings()`, `getCachedRemoteConfigs()`, `getCachedCustomerInfo()`, `activeEntitlementKeysOffline()`, `getStorefront()`, `getStoreCapabilities()`
+  `getCustomerInfo()`, `getOfferings()`, `getOffering()`, `getCachedOfferings()`, `getCachedRemoteConfigs()`, `getCachedCustomerInfo()`, `activeEntitlementKeysOffline()`, `getStorefront()`, `getStoreCapabilities()`
 - Customer data:
   `setAttributes()`, `setAttribute()`, `unsetAttribute()`, `setEmail()`, `setDisplayName()`, `setPhoneNumber()`, `setPushToken()`, `collectDeviceIdentifiers()`
 - Attribution and integrations:
   `setIntegrationIdentifier()`, `setCustomIntegrationIdentifier()`, `updateAttribution()`, `setMediaSource()`, `setCampaign()`, `setAdGroup()`, `setAd()`, `setKeyword()`, `setCreative()`
 - Remote config and experiments:
-  `getRemoteConfigs()`, `getExperimentAssignment()`, `getRemoteConfig()`, `getRemoteConfigBool()`, `getRemoteConfigString()`, `getRemoteConfigNumber()`, `getRemoteConfigInt()`
+  `getRemoteConfigs()`, `getExperiment()`, `getExperimentAssignment()`, `getRemoteConfig()`, `getRemoteConfigBool()`, `getRemoteConfigString()`, `getRemoteConfigNumber()`, `getRemoteConfigInt()`
 - iOS-only helpers:
   `presentOfferCodeRedeemSheet()`, `getAsaDiagnostics()`, `getPendingAsaPurchaseEventCount()`, `getAsaFirstInstallOnDevice()`, `getAsaFirstInstallOnAccount()`, `purchaseFromIntent()`
 - Diagnostics events:
