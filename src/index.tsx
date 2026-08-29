@@ -1731,6 +1731,74 @@ export class AppActorExperimentAssignment {
   }
 }
 
+/**
+ * A user's standing in one experiment — always returned, also when the user is
+ * not in it, so callers never null-check. Use `AppActor.instance.getExperiment`
+ * to get one (examples there).
+ */
+export class AppActorExperiment {
+  constructor(
+    /** The developer-defined experiment key this was resolved for. */
+    public readonly experimentKey: string,
+    /** The raw assignment; `null` when the user is not in the experiment (not targeted, not running, …). */
+    public readonly assignment: AppActorExperimentAssignment | null
+  ) {}
+
+  /** `true` when the user has a variant in this experiment. */
+  get isEnrolled(): boolean {
+    return this.assignment != null;
+  }
+
+  /** The assigned variant's key (e.g. `'control'`), or `null` when not enrolled. */
+  get variantKey(): string | null {
+    return this.assignment?.variantKey ?? null;
+  }
+
+  /** The variant's payload, or `undefined` when not enrolled. */
+  get payload(): unknown {
+    return this.assignment?.payload;
+  }
+
+  /** `true` when the user is enrolled in the variant with this key. */
+  isVariant(variantKey: string): boolean {
+    return this.assignment?.variantKey === variantKey;
+  }
+
+  /** The payload as a boolean, or `defaultValue` when not enrolled or not a boolean. */
+  boolValue(defaultValue: boolean): boolean {
+    return asBoolean(this.payload) ?? defaultValue;
+  }
+
+  /** The payload as a string, or `defaultValue` when not enrolled or not a string. */
+  stringValue(defaultValue: string): string {
+    return asString(this.payload) ?? defaultValue;
+  }
+
+  /** The payload as an integer, or `defaultValue` when not enrolled or not a whole number. */
+  intValue(defaultValue: number): number {
+    return Number.isInteger(this.payload)
+      ? (this.payload as number)
+      : defaultValue;
+  }
+
+  /** The payload as a number, or `defaultValue` when not enrolled or not a finite number. */
+  doubleValue(defaultValue: number): number {
+    return asNumber(this.payload) ?? defaultValue;
+  }
+
+  /** A key of a JSON payload: `experiment.get('title')`. */
+  get(key: string): unknown {
+    const payload = this.payload;
+    return isRecord(payload) ? payload[key] : undefined;
+  }
+
+  equals(other: unknown): boolean {
+    return (
+      other instanceof AppActorExperiment && appActorModelEquals(this, other)
+    );
+  }
+}
+
 export class AppActorReceiptPipelineEvent {
   static readonly typePostedOk = 'posted_ok';
   static readonly typeRetryScheduled = 'retry_scheduled';
@@ -2161,6 +2229,14 @@ export class AppActorOffering {
     public readonly packages: AppActorPackage[] = []
   ) {}
 
+  /**
+   * The developer-defined key of this offering — the "lookup key" in the
+   * dashboard, e.g. `'onboarding'`. Falls back to `id` when the offering has no key.
+   */
+  get offeringKey(): string {
+    return this.lookupKey ?? this.id;
+  }
+
   package(id: string): AppActorPackage | undefined {
     return this.packages.find((item) => item.id === id);
   }
@@ -2225,12 +2301,30 @@ export class AppActorOfferings {
     public readonly verification = AppActorVerificationResult.NotRequested
   ) {}
 
+  /** Every offering as a list: the current one first, then by `offeringKey`. */
+  get allOfferings(): AppActorOffering[] {
+    return Object.values(this.all).sort((a, b) => {
+      if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
+      if (a.offeringKey === b.offeringKey) return 0;
+      return a.offeringKey < b.offeringKey ? -1 : 1;
+    });
+  }
+
   offering(id: string): AppActorOffering | undefined {
     return this.all[id];
   }
 
-  offeringByLookupKey(lookupKey: string): AppActorOffering | undefined {
-    return Object.values(this.all).find((item) => item.lookupKey === lookupKey);
+  /**
+   * Returns the offering with the given `offeringKey`, or `undefined`.
+   *
+   * ```ts
+   * const onboarding = offerings.getOffering('onboarding');
+   * ```
+   */
+  getOffering(offeringKey: string): AppActorOffering | undefined {
+    return Object.values(this.all).find(
+      (item) => item.offeringKey === offeringKey
+    );
   }
 
   equals(other: unknown): boolean {
@@ -2680,6 +2774,20 @@ export class AppActor {
     );
   }
 
+  /**
+   * Fetches offerings (see `getOfferings`) and returns the one with the given
+   * `offeringKey`, or `undefined` if the app has no such offering.
+   *
+   * ```ts
+   * const onboarding = await AppActor.instance.getOffering('onboarding');
+   * ```
+   */
+  async getOffering(
+    offeringKey: string
+  ): Promise<AppActorOffering | undefined> {
+    return (await this.getOfferings()).getOffering(offeringKey);
+  }
+
   async activeEntitlementKeysOffline(): Promise<Set<string>> {
     const response = await execute(METHOD_NAMES.activeEntitlementKeysOffline);
     return new Set(asStringArray(response.keys));
@@ -2916,6 +3024,28 @@ export class AppActor {
       return null;
     }
     return AppActorExperimentAssignment.fromJson(response);
+  }
+
+  /**
+   * Resolves the user's standing in an experiment.
+   *
+   * Never `null`: when the user is not in the experiment the result reports
+   * `isEnrolled === false`, `variantKey === null`, and every typed getter
+   * returns its default. Same caching and errors as `getExperimentAssignment`.
+   *
+   * ```ts
+   * const paywall = await AppActor.instance.getExperiment('paywall_test');
+   * if (paywall.isVariant('annual_first')) showAnnualFirst();
+   *
+   * const showOnboarding = (await AppActor.instance.getExperiment('has_onboard')).boolValue(true);
+   * const title = (await AppActor.instance.getExperiment('onboarding_flow')).get('title') ?? 'Welcome';
+   * ```
+   */
+  async getExperiment(experimentKey: string): Promise<AppActorExperiment> {
+    return new AppActorExperiment(
+      experimentKey,
+      await this.getExperimentAssignment(experimentKey)
+    );
   }
 
   async getRemoteConfig(key: string): Promise<AppActorRemoteConfigItem | null> {
