@@ -5,11 +5,11 @@ Server-authoritative in-app purchase infrastructure for React Native on iOS and 
 This package mirrors the current AppActor Flutter SDK surface as closely as possible on top of the shared native AppActor plugin layer:
 
 - React Native `0.85.3`
-- iOS `15.1+`
-- Android `minSdk 24`
+- iOS `16.0+`
+- Android `minSdk 26`
 - Native dependencies:
-  - iOS `AppActorPlugin 0.1.8`
-  - Android `com.appactor:appactor-plugin:2.3.7`
+  - iOS `AppActorPlugin 0.2.1`
+  - Android `com.appactor:appactor-plugin:2.4.2`
 
 ## Installation
 
@@ -25,7 +25,7 @@ yarn add appactor-react-native
 
 ### iOS
 
-`AppActorPlugin 0.1.8` requires up-to-date CocoaPods specs. After installing JS dependencies, run:
+`AppActorPlugin 0.2.1` requires up-to-date CocoaPods specs. After installing JS dependencies, run:
 
 ```sh
 cd ios

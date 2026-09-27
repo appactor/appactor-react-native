@@ -1,7 +1,7 @@
 buildscript {
   ext.AppactorReactNative = [
     kotlinVersion: '2.0.21',
-    minSdkVersion: 24,
+    minSdkVersion: 26,
     compileSdkVersion: 36,
     targetSdkVersion: 36,
   ]
@@ -69,5 +69,5 @@ repositories {
 
 dependencies {
   implementation 'com.facebook.react:react-android'
-  implementation 'com.appactor:appactor-plugin:2.3.15'
+  implementation 'com.appactor:appactor-plugin:2.4.2'
 }
