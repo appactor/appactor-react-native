@@ -12,7 +12,6 @@ unless defined?(install_modules_dependencies)
 end
 
 package = JSON.parse(File.read(File.join(__dir__, 'package.json')))
-ios_version = defined?(min_ios_version_supported) ? min_ios_version_supported : '15.1'
 
 Pod::Spec.new do |s|
   s.name         = 'AppactorReactNative'
@@ -22,14 +21,15 @@ Pod::Spec.new do |s|
   s.license      = package['license']
   s.authors      = package['author']
 
-  s.platforms    = { :ios => ios_version }
+  # AppActorPlugin 0.2 needs iOS 16.
+  s.platforms    = { :ios => '16.0' }
   s.source       = { :git => 'https://github.com/appactor/appactor-react-native.git', :tag => "#{s.version}" }
 
   s.source_files = 'ios/**/*.{h,m,mm,swift}'
   s.resource_bundles = {
     'AppactorReactNative_privacy' => ['ios/PrivacyInfo.xcprivacy']
   }
-  s.dependency   'AppActorPlugin', '0.1.13'
+  s.dependency   'AppActorPlugin', '0.2.1'
   s.swift_version = '5.9'
 
   if defined?(install_modules_dependencies)
