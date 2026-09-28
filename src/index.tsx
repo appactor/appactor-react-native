@@ -705,13 +705,10 @@ function resetDebugSdkLogSubscription(): void {
 }
 
 /*
- * iOS purchase intents (promoted in-app purchases, win-back offers). The native plugin takes the
- * iOS SDK's intent callback, which turns off its auto-purchase, and emits each intent once; nothing
- * is bought until the app calls purchaseFromIntent(). So this module listens from import, before
- * configure() can run, which also keeps the native module sending events. An intent that arrives
- * while no onPurchaseIntent listener exists waits here for the next one. The hold lives in this JS
- * context, so a reload loses it. An intent lasts only as long as the native intent store keeps it
- * (five minutes, ten intents), and reset() drops it. Android never emits intents.
+ * iOS purchase intents. The native plugin turns off the iOS SDK's auto-purchase and emits each
+ * intent once, so this module listens from import, before configure() can run (which also keeps
+ * the native module sending events), and holds an intent until an onPurchaseIntent listener
+ * exists. The hold lives in this JS context only; its limits mirror the native intent store.
  */
 const PURCHASE_INTENT_EVENT_NAME = 'purchase_intent_received';
 const INTENT_LIFETIME_MS = 5 * 60 * 1000;
@@ -722,7 +719,6 @@ let heldPurchaseIntents: ReceivedPurchaseIntent[] = [];
 let purchaseIntentResetsInFlight = 0;
 
 function receivePurchaseIntent(intent: ReceivedPurchaseIntent): void {
-  // During a reset an intent belongs to the user being signed out, and native forgets it.
   if (
     purchaseIntentResetsInFlight > 0 ||
     Date.now() - intent.receivedAt > INTENT_LIFETIME_MS
@@ -769,18 +765,25 @@ function subscribeToPurchaseIntents(
   };
 }
 
-if (nativeEmitter) {
-  nativeEmitter.addListener(
-    NATIVE_EVENT_NAME,
-    (event: NativeEventEnvelope) => {
-      if (event?.name !== PURCHASE_INTENT_EVENT_NAME) {
-        return;
-      }
-      const payload = decodeEventPayload(event.json);
-      if (payload) {
-        receivePurchaseIntent({ payload, receivedAt: Date.now() });
-      }
+function addNativePayloadListener(
+  emitter: NativeEventEmitter,
+  eventName: string,
+  onPayload: (payload: JsonObject) => void
+): { remove(): void } {
+  return emitter.addListener(NATIVE_EVENT_NAME, (event: NativeEventEnvelope) => {
+    if (event?.name !== eventName) {
+      return;
     }
+    const payload = decodeEventPayload(event.json);
+    if (payload) {
+      onPayload(payload);
+    }
+  });
+}
+
+if (nativeEmitter) {
+  addNativePayloadListener(nativeEmitter, PURCHASE_INTENT_EVENT_NAME, (payload) =>
+    receivePurchaseIntent({ payload, receivedAt: Date.now() })
   );
 }
 
@@ -2610,17 +2613,10 @@ class AppActorEventStream<T> {
       return subscribeToPurchaseIntents(receive);
     }
 
-    const subscription = nativeEmitter.addListener(
-      NATIVE_EVENT_NAME,
-      (event: NativeEventEnvelope) => {
-        if (!event || event.name !== this.expectedName) {
-          return;
-        }
-        const payload = decodeEventPayload(event.json);
-        if (payload) {
-          receive(payload);
-        }
-      }
+    const subscription = addNativePayloadListener(
+      nativeEmitter,
+      this.expectedName,
+      receive
     );
 
     return { remove: () => subscription.remove() };

@@ -101,8 +101,8 @@ import {
 } from '../index';
 import { Platform } from 'react-native';
 
-// Subscribed by the module at import, before configure(); beforeEach only clears the listeners
-// that tests add.
+// The listener the module adds at import; beforeEach empties mockNativeEventListeners, so it is
+// kept here.
 const importTimeNativeListeners = [...mockNativeEventListeners];
 const purchaseIntentSubscriptions: AppActorEventSubscription[] = [];
 
