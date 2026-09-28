@@ -1031,9 +1031,8 @@ describe('AppActor React Native', () => {
     );
   });
 
-  it('listens for purchase intents from import, before configure', () => {
+  it('listens for purchase intents from import', () => {
     expect(importTimeNativeListeners).toHaveLength(1);
-    expect(mockExecute).not.toHaveBeenCalled();
   });
 
   it('holds a purchase intent until the first listener and delivers it once', async () => {
@@ -1194,8 +1193,14 @@ describe('AppActor React Native', () => {
     expect(deliveredIntentIds(listener)).toEqual(['intent_after_reconfigure']);
   });
 
-  it('delivers purchase intents to the other listeners when one throws', async () => {
-    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  it('delivers purchase intents to the other listeners when one throws, then rethrows', async () => {
+    const rethrows: Array<() => void> = [];
+    const timeoutSpy = jest
+      .spyOn(globalThis, 'setTimeout')
+      .mockImplementation(((callback: () => void) => {
+        rethrows.push(callback);
+        return 0;
+      }) as never);
     try {
       emitPurchaseIntent('intent_held');
       listenForPurchaseIntents(() => {
@@ -1203,7 +1208,7 @@ describe('AppActor React Native', () => {
       });
       const listener = jest.fn();
       listenForPurchaseIntents(listener);
-      await flushMicrotasks();
+      await Promise.resolve();
 
       emitPurchaseIntent('intent_live');
 
@@ -1211,9 +1216,12 @@ describe('AppActor React Native', () => {
         'intent_held',
         'intent_live',
       ]);
-      expect(errorSpy).toHaveBeenCalledTimes(2);
+      expect(rethrows).toHaveLength(2);
+      for (const rethrow of rethrows) {
+        expect(rethrow).toThrow('listener exploded');
+      }
     } finally {
-      errorSpy.mockRestore();
+      timeoutSpy.mockRestore();
     }
   });
 

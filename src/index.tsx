@@ -739,7 +739,11 @@ function receivePurchaseIntent(intent: ReceivedPurchaseIntent): void {
     try {
       listener(intent.payload);
     } catch (error) {
-      console.error('[AppActor] An onPurchaseIntent listener threw:', error);
+      // Reaches the app's error handler like a throw from any other stream's listener, without
+      // keeping the intent from the other listeners.
+      setTimeout(() => {
+        throw error;
+      }, 0);
     }
   }
 }
