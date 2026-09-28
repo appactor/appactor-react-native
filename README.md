@@ -172,7 +172,7 @@ More detail:
 
 ## Event Streams
 
-Subscribe once and keep the returned subscription so you can remove it when the screen unmounts:
+Subscribe once and keep the returned subscription so you can remove it when the screen unmounts (except `onPurchaseIntent`, see [Purchase intents](#purchase-intents-ios)):
 
 ```ts
 const customerSub = AppActor.instance.onCustomerInfoUpdated.listen((info) => {
@@ -181,10 +181,6 @@ const customerSub = AppActor.instance.onCustomerInfoUpdated.listen((info) => {
 
 const receiptSub = AppActor.instance.onReceiptPipelineEvent.listen((event) => {
   console.log('receipt_pipeline_event', event.type, event.productId);
-});
-
-const purchaseIntentSub = AppActor.instance.onPurchaseIntent.listen((intent) => {
-  console.log('purchase_intent_received', intent.productId);
 });
 
 const deferredSub = AppActor.instance.onDeferredPurchaseResolved.listen((event) => {
@@ -197,12 +193,26 @@ const sdkLogSub = AppActor.instance.onSdkLog.listen((event) => {
 
 customerSub.remove();
 receiptSub.remove();
-purchaseIntentSub.remove();
 deferredSub.remove();
 sdkLogSub.remove();
 ```
 
 `sdk_log` entries are also printed automatically in debug builds, matching Flutter's default diagnostics behavior. `onSdkLog` is for advanced tooling and custom inspection; production app flow should not depend on those events.
+
+### Purchase intents (iOS)
+
+On iOS 16.4+, purchases the user starts in the App Store (promoted in-app purchases, win-back offers) arrive through `onPurchaseIntent`, and nothing is bought until the app calls `purchaseFromIntent(intent)`. Register a listener that does so early, in your app's entry file before or right after `configure()`, and keep it for the app's lifetime. Don't tie it to a screen or remove it on unmount:
+
+```ts
+// App entry file, module scope
+AppActor.instance.onPurchaseIntent.listen((intent) => {
+  AppActor.instance
+    .purchaseFromIntent(intent)
+    .catch((error) => console.warn('purchaseFromIntent failed', error));
+});
+```
+
+Intents that arrive while no `onPurchaseIntent` listener exists, for example during a cold launch from the App Store before your listener is registered, are held in memory and handed to the next listener. The hold lives in the JS context, so a JS reload loses it. An intent is forgotten five minutes after it arrived, and `reset()` drops held intents. Android never emits purchase intents.
 
 ## Platform Notes
 

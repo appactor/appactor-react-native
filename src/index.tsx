@@ -1,7 +1,7 @@
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import { fromByteArray } from 'base64-js';
 
-export const appActorReactNativeVersion = '0.2.0';
+export const appActorReactNativeVersion = '0.2.1';
 
 type JsonObject = Record<string, unknown>;
 type JsonMap<T> = Record<string, T>;
@@ -702,6 +702,82 @@ function ensureDebugSdkLogSubscription(): void {
 function resetDebugSdkLogSubscription(): void {
   debugSdkLogSubscription?.remove();
   debugSdkLogSubscription = null;
+}
+
+/*
+ * iOS purchase intents (promoted in-app purchases, win-back offers). The native plugin takes the
+ * iOS SDK's intent callback, which turns off its auto-purchase, and emits each intent once; nothing
+ * is bought until the app calls purchaseFromIntent(). So this module listens from import, before
+ * configure() can run, which also keeps the native module sending events. An intent that arrives
+ * while no onPurchaseIntent listener exists waits here for the next one. The hold lives in this JS
+ * context, so a reload loses it. An intent lasts only as long as the native intent store keeps it
+ * (five minutes, ten intents), and reset() drops it. Android never emits intents.
+ */
+const PURCHASE_INTENT_EVENT_NAME = 'purchase_intent_received';
+const INTENT_LIFETIME_MS = 5 * 60 * 1000;
+const MAX_HELD_INTENTS = 10;
+type ReceivedPurchaseIntent = { payload: JsonObject; receivedAt: number };
+const purchaseIntentListeners = new Set<(payload: JsonObject) => void>();
+let heldPurchaseIntents: ReceivedPurchaseIntent[] = [];
+let purchaseIntentResetsInFlight = 0;
+
+function receivePurchaseIntent(intent: ReceivedPurchaseIntent): void {
+  // During a reset an intent belongs to the user being signed out, and native forgets it.
+  if (
+    purchaseIntentResetsInFlight > 0 ||
+    Date.now() - intent.receivedAt > INTENT_LIFETIME_MS
+  ) {
+    return;
+  }
+  if (purchaseIntentListeners.size === 0) {
+    heldPurchaseIntents = [...heldPurchaseIntents, intent].slice(
+      -MAX_HELD_INTENTS
+    );
+    return;
+  }
+  for (const listener of Array.from(purchaseIntentListeners)) {
+    try {
+      listener(intent.payload);
+    } catch (error) {
+      console.error('[AppActor] An onPurchaseIntent listener threw:', error);
+    }
+  }
+}
+
+function releaseHeldPurchaseIntents(): void {
+  const held = heldPurchaseIntents;
+  heldPurchaseIntents = [];
+  held.forEach(receivePurchaseIntent);
+}
+
+function subscribeToPurchaseIntents(
+  listener: (payload: JsonObject) => void
+): AppActorEventSubscription {
+  purchaseIntentListeners.add(listener);
+  if (heldPurchaseIntents.length > 0) {
+    // Once the caller holds its subscription, as with an intent that arrives live.
+    void Promise.resolve().then(releaseHeldPurchaseIntents);
+  }
+  return {
+    remove: () => {
+      purchaseIntentListeners.delete(listener);
+    },
+  };
+}
+
+if (nativeEmitter) {
+  nativeEmitter.addListener(
+    NATIVE_EVENT_NAME,
+    (event: NativeEventEnvelope) => {
+      if (event?.name !== PURCHASE_INTENT_EVENT_NAME) {
+        return;
+      }
+      const payload = decodeEventPayload(event.json);
+      if (payload) {
+        receivePurchaseIntent({ payload, receivedAt: Date.now() });
+      }
+    }
+  );
 }
 
 function mapValues<T>(
@@ -2508,6 +2584,28 @@ class AppActorEventStream<T> {
       });
     }
 
+    const receive = (payload: JsonObject) => {
+      let decoded: T;
+      try {
+        decoded = this.decoder(payload);
+      } catch (error) {
+        if (isDevelopmentRuntime()) {
+          const logger =
+            typeof console.debug === 'function' ? console.debug : console.log;
+          logger(
+            `[AppActor] Dropped malformed "${this.expectedName}" event: ` +
+              (error instanceof Error ? error.message : String(error))
+          );
+        }
+        return;
+      }
+      listener(decoded);
+    };
+
+    if (this.expectedName === PURCHASE_INTENT_EVENT_NAME) {
+      return subscribeToPurchaseIntents(receive);
+    }
+
     const subscription = nativeEmitter.addListener(
       NATIVE_EVENT_NAME,
       (event: NativeEventEnvelope) => {
@@ -2515,24 +2613,9 @@ class AppActorEventStream<T> {
           return;
         }
         const payload = decodeEventPayload(event.json);
-        if (!payload) {
-          return;
+        if (payload) {
+          receive(payload);
         }
-        let decoded: T;
-        try {
-          decoded = this.decoder(payload);
-        } catch (error) {
-          if (isDevelopmentRuntime()) {
-            const logger =
-              typeof console.debug === 'function' ? console.debug : console.log;
-            logger(
-              `[AppActor] Dropped malformed "${this.expectedName}" event: ` +
-                (error instanceof Error ? error.message : String(error))
-            );
-          }
-          return;
-        }
-        listener(decoded);
       }
     );
 
@@ -2599,8 +2682,16 @@ export class AppActor {
     AppActorReceiptPipelineEvent.fromJson
   );
 
+  /**
+   * iOS 16.4+: purchases the user starts in the App Store (promoted in-app purchases, win-back
+   * offers). Nothing is bought until the app calls `purchaseFromIntent(intent)`, so register a
+   * listener that does early (before or right after `configure()`) and keep it for the app's
+   * lifetime. Intents that arrive while no listener exists are held and handed to the next
+   * listener. An intent is forgotten five minutes after it arrived, and `reset()` drops held ones.
+   * Never emitted on Android.
+   */
   readonly onPurchaseIntent = new AppActorEventStream(
-    'purchase_intent_received',
+    PURCHASE_INTENT_EVENT_NAME,
     AppActorPurchaseIntent.fromJson
   );
 
@@ -2649,7 +2740,15 @@ export class AppActor {
   }
 
   async reset(): Promise<void> {
-    await execute(METHOD_NAMES.reset);
+    // Native forgets its stored purchase intents on reset, so the held ones and those that arrive
+    // while it runs could no longer be bought.
+    purchaseIntentResetsInFlight += 1;
+    heldPurchaseIntents = [];
+    try {
+      await execute(METHOD_NAMES.reset);
+    } finally {
+      purchaseIntentResetsInFlight -= 1;
+    }
     this.stagedAsaOptions = undefined;
     resetDebugSdkLogSubscription();
   }
