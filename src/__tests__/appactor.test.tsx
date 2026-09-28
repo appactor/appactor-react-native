@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from '@jest/globals';
 
 type ExecuteFn = (
   method: string,
@@ -6,9 +13,11 @@ type ExecuteFn = (
 ) => Promise<string | null>;
 
 var mockExecute: jest.MockedFunction<ExecuteFn>;
-var mockNativeEventListeners: Array<
+// Set by the mock factory only: an initializer here would run after the import and drop the
+// listener the module adds at import.
+var mockNativeEventListeners!: Array<
   (event: { name?: string; json?: string }) => void
-> = [];
+>;
 
 jest.mock('react-native', () => {
   mockExecute = jest.fn<ExecuteFn>();
@@ -51,6 +60,7 @@ import {
   AppActorCustomerInfo,
   AppActorDeferredPurchaseEvent,
   AppActorError,
+  type AppActorEventSubscription,
   AppActorConfigValueType,
   AppActorEntitlementInfo,
   AppActorExperimentAssignment,
@@ -90,6 +100,48 @@ import {
   UnsupportedError,
 } from '../index';
 import { Platform } from 'react-native';
+
+// The listener the module adds at import; beforeEach empties mockNativeEventListeners, so it is
+// kept here.
+const importTimeNativeListeners = [...mockNativeEventListeners];
+const purchaseIntentSubscriptions: AppActorEventSubscription[] = [];
+
+function emitPurchaseIntent(
+  intentId: string,
+  extra: Record<string, unknown> = {}
+): void {
+  for (const nativeListener of [
+    ...importTimeNativeListeners,
+    ...mockNativeEventListeners,
+  ]) {
+    nativeListener({
+      name: 'purchase_intent_received',
+      json: JSON.stringify({
+        intent_id: intentId,
+        product_id: 'com.app.monthly',
+        ...extra,
+      }),
+    });
+  }
+}
+
+function listenForPurchaseIntents(
+  listener: (intent: AppActorPurchaseIntent) => void
+): AppActorEventSubscription {
+  const subscription = AppActor.instance.onPurchaseIntent.listen(listener);
+  purchaseIntentSubscriptions.push(subscription);
+  return subscription;
+}
+
+function deliveredIntentIds(listener: jest.Mock): string[] {
+  return listener.mock.calls.map(
+    (call) => (call[0] as AppActorPurchaseIntent).intentId
+  );
+}
+
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 function success(value: unknown): string {
   return JSON.stringify({ success: value });
@@ -140,6 +192,12 @@ describe('AppActor React Native', () => {
     mockExecute.mockReset();
   });
 
+  afterEach(() => {
+    for (const subscription of purchaseIntentSubscriptions.splice(0)) {
+      subscription.remove();
+    }
+  });
+
   it('configures with wrapper platform info and staged ASA on iOS', async () => {
     mockExecute.mockResolvedValue(success(null));
 
@@ -155,7 +213,7 @@ describe('AppActor React Native', () => {
         api_key: 'pk_test_123',
         options: {
           log_level: 'debug',
-          platform_info: { flavor: 'react-native', version: '0.2.0' },
+          platform_info: { flavor: 'react-native', version: '0.2.1' },
         },
       })
     );
@@ -203,7 +261,7 @@ describe('AppActor React Native', () => {
       JSON.stringify({
         api_key: 'pk_android',
         options: {
-          platform_info: { flavor: 'react-native', version: '0.2.0' },
+          platform_info: { flavor: 'react-native', version: '0.2.1' },
         },
       })
     );
@@ -232,7 +290,7 @@ describe('AppActor React Native', () => {
         api_key: 'pk_test_123',
         app_user_id: '',
         options: {
-          platform_info: { flavor: 'react-native', version: '0.2.0' },
+          platform_info: { flavor: 'react-native', version: '0.2.1' },
         },
       })
     );
@@ -938,16 +996,11 @@ describe('AppActor React Native', () => {
     );
 
     const listener = jest.fn();
-    AppActor.instance.onPurchaseIntent.listen(listener);
+    listenForPurchaseIntents(listener);
 
-    mockNativeEventListeners[0]?.({
-      name: 'purchase_intent_received',
-      json: JSON.stringify({
-        intent_id: 'intent_123',
-        product_id: 'com.app.monthly',
-        offer_id: 'offer_123',
-        offer_type: 'intro7d',
-      }),
+    emitPurchaseIntent('intent_123', {
+      offer_id: 'offer_123',
+      offer_type: 'intro7d',
     });
 
     expect(listener).toHaveBeenCalledWith(
@@ -976,6 +1029,200 @@ describe('AppActor React Native', () => {
         intent_id: 'intent_123',
       })
     );
+  });
+
+  it('listens for purchase intents from import', () => {
+    expect(importTimeNativeListeners).toHaveLength(1);
+  });
+
+  it('holds a purchase intent until the first listener and delivers it once', async () => {
+    emitPurchaseIntent('intent_early', { offer_id: 'winback_1' });
+
+    const first = jest.fn();
+    listenForPurchaseIntents(first);
+    expect(first).not.toHaveBeenCalled();
+
+    await flushMicrotasks();
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(first).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intentId: 'intent_early',
+        productId: 'com.app.monthly',
+        offerId: 'winback_1',
+      })
+    );
+
+    const second = jest.fn();
+    listenForPurchaseIntents(second);
+    await flushMicrotasks();
+    expect(second).not.toHaveBeenCalled();
+    expect(first).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands held purchase intents to every listener added in the same tick', async () => {
+    emitPurchaseIntent('intent_early');
+
+    const first = jest.fn();
+    const second = jest.fn();
+    listenForPurchaseIntents(first);
+    listenForPurchaseIntents(second);
+    await flushMicrotasks();
+
+    expect(deliveredIntentIds(first)).toEqual(['intent_early']);
+    expect(deliveredIntentIds(second)).toEqual(['intent_early']);
+  });
+
+  it('delivers live purchase intents without holding them', async () => {
+    const first = jest.fn();
+    listenForPurchaseIntents(first);
+
+    emitPurchaseIntent('intent_live');
+    expect(deliveredIntentIds(first)).toEqual(['intent_live']);
+
+    const later = jest.fn();
+    listenForPurchaseIntents(later);
+    await flushMicrotasks();
+    expect(later).not.toHaveBeenCalled();
+    expect(deliveredIntentIds(first)).toEqual(['intent_live']);
+  });
+
+  it('holds a purchase intent that arrives between listeners for the next one', async () => {
+    const removed = jest.fn();
+    listenForPurchaseIntents(removed).remove();
+
+    emitPurchaseIntent('intent_between');
+    expect(removed).not.toHaveBeenCalled();
+
+    const next = jest.fn();
+    listenForPurchaseIntents(next);
+    await flushMicrotasks();
+    expect(deliveredIntentIds(next)).toEqual(['intent_between']);
+    expect(removed).not.toHaveBeenCalled();
+  });
+
+  it('keeps holding a purchase intent when the listener is removed before it is handed over', async () => {
+    emitPurchaseIntent('intent_early');
+
+    const removed = jest.fn();
+    listenForPurchaseIntents(removed).remove();
+    await flushMicrotasks();
+    expect(removed).not.toHaveBeenCalled();
+
+    const next = jest.fn();
+    listenForPurchaseIntents(next);
+    await flushMicrotasks();
+    expect(deliveredIntentIds(next)).toEqual(['intent_early']);
+  });
+
+  it('drops held purchase intents the native store has already forgotten', async () => {
+    const now = jest.spyOn(Date, 'now');
+    try {
+      now.mockReturnValue(1_000_000);
+      emitPurchaseIntent('intent_stale');
+      now.mockReturnValue(1_000_000 + 60_000);
+      emitPurchaseIntent('intent_fresh');
+
+      now.mockReturnValue(1_000_000 + 5 * 60 * 1000 + 1);
+      const listener = jest.fn();
+      listenForPurchaseIntents(listener);
+      await flushMicrotasks();
+
+      expect(deliveredIntentIds(listener)).toEqual(['intent_fresh']);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('holds at most the ten newest purchase intents, like the native store', async () => {
+    for (let index = 0; index < 12; index += 1) {
+      emitPurchaseIntent(`intent_${index}`);
+    }
+
+    const listener = jest.fn();
+    listenForPurchaseIntents(listener);
+    await flushMicrotasks();
+
+    expect(deliveredIntentIds(listener)).toEqual(
+      Array.from({ length: 10 }, (_, index) => `intent_${index + 2}`)
+    );
+  });
+
+  it('drops held purchase intents on reset and those that arrive while it runs', async () => {
+    emitPurchaseIntent('intent_before_reset');
+    mockExecute.mockImplementation(async (method) => {
+      if (method === 'reset') {
+        emitPurchaseIntent('intent_during_reset');
+      }
+      return success(null);
+    });
+
+    await AppActor.instance.reset();
+
+    const listener = jest.fn();
+    listenForPurchaseIntents(listener);
+    await flushMicrotasks();
+    expect(listener).not.toHaveBeenCalled();
+
+    emitPurchaseIntent('intent_after_reset');
+    expect(deliveredIntentIds(listener)).toEqual(['intent_after_reset']);
+  });
+
+  it('keeps receiving purchase intents after a failed reset', async () => {
+    mockExecute.mockRejectedValueOnce(new Error('bridge exploded'));
+    await expect(AppActor.instance.reset()).rejects.toBeInstanceOf(
+      AppActorError
+    );
+
+    const listener = jest.fn();
+    listenForPurchaseIntents(listener);
+    emitPurchaseIntent('intent_after_failed_reset');
+    expect(deliveredIntentIds(listener)).toEqual([
+      'intent_after_failed_reset',
+    ]);
+  });
+
+  it('keeps a purchase-intent listener across reset', async () => {
+    mockExecute.mockResolvedValue(success(null));
+    const listener = jest.fn();
+    listenForPurchaseIntents(listener);
+
+    await AppActor.instance.reset();
+    await AppActor.instance.configure('pk_test_123');
+    emitPurchaseIntent('intent_after_reconfigure');
+
+    expect(deliveredIntentIds(listener)).toEqual(['intent_after_reconfigure']);
+  });
+
+  it('delivers purchase intents to the other listeners when one throws, then rethrows', async () => {
+    const rethrows: Array<() => void> = [];
+    const timeoutSpy = jest
+      .spyOn(globalThis, 'setTimeout')
+      .mockImplementation(((callback: () => void) => {
+        rethrows.push(callback);
+        return 0;
+      }) as never);
+    try {
+      emitPurchaseIntent('intent_held');
+      listenForPurchaseIntents(() => {
+        throw new Error('listener exploded');
+      });
+      const listener = jest.fn();
+      listenForPurchaseIntents(listener);
+      await Promise.resolve();
+
+      emitPurchaseIntent('intent_live');
+
+      expect(deliveredIntentIds(listener)).toEqual([
+        'intent_held',
+        'intent_live',
+      ]);
+      expect(rethrows).toHaveLength(2);
+      for (const rethrow of rethrows) {
+        expect(rethrow).toThrow('listener exploded');
+      }
+    } finally {
+      timeoutSpy.mockRestore();
+    }
   });
 
   it('throws UnsupportedError for iOS-only helpers on Android', async () => {
