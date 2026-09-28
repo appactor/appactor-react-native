@@ -9,7 +9,7 @@ This package mirrors the current AppActor Flutter SDK surface as closely as poss
 - Android `minSdk 26`
 - Native dependencies:
   - iOS `AppActorPlugin 0.2.1`
-  - Android `com.appactor:appactor-plugin:2.4.2`
+  - Android `com.appactor:appactor-plugin:2.4.3`
 
 ## Installation
 

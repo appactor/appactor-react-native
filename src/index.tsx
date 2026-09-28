@@ -1,7 +1,7 @@
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import { fromByteArray } from 'base64-js';
 
-export const appActorReactNativeVersion = '0.2.1';
+export const appActorReactNativeVersion = '0.2.2';
 
 type JsonObject = Record<string, unknown>;
 type JsonMap<T> = Record<string, T>;
