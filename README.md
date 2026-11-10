@@ -252,10 +252,6 @@ yarn test --runInBand
 yarn prepare
 ```
 
-## Internal Docs
-
-- [Flutter parity implementation plan](docs/appactor-react-native-parity-plan.md)
-
 ## License
 
 MIT
