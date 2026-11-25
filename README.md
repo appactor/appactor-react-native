@@ -8,8 +8,8 @@ This package mirrors the current AppActor Flutter SDK surface as closely as poss
 - iOS `16.0+`
 - Android `minSdk 26`
 - Native dependencies:
-  - iOS `AppActorPlugin 0.2.1`
-  - Android `com.appactor:appactor-plugin:2.4.3`
+  - iOS `AppActorPlugin 0.2.2`
+  - Android `com.appactor:appactor-plugin:2.4.4`
 
 ## Installation
 
@@ -25,7 +25,7 @@ yarn add appactor-react-native
 
 ### iOS
 
-`AppActorPlugin 0.2.1` requires up-to-date CocoaPods specs. After installing JS dependencies, run:
+`AppActorPlugin 0.2.2` requires up-to-date CocoaPods specs. After installing JS dependencies, run:
 
 ```sh
 cd ios

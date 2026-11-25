@@ -1,7 +1,7 @@
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import { fromByteArray } from 'base64-js';
 
-export const appActorReactNativeVersion = '0.2.2';
+export const appActorReactNativeVersion = '0.2.3';
 
 type JsonObject = Record<string, unknown>;
 type JsonMap<T> = Record<string, T>;
@@ -393,6 +393,17 @@ function normalizePlacement(placement?: string | null): string | undefined {
   }
 
   return normalized;
+}
+
+function normalizePackageLookupKey(
+  lookupKey?: string | null
+): string | undefined {
+  if (typeof lookupKey !== 'string') {
+    return undefined;
+  }
+
+  const normalized = lookupKey.trim();
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 function validateCustomKey(key: string): void {
@@ -2230,6 +2241,13 @@ export class AppActorCustomerInfo {
 }
 
 export class AppActorPackage {
+  /**
+   * The developer-defined lookup key of this package (trimmed; `undefined`
+   * when absent or blank). Never falls back to `id`, `packageType`, or
+   * `productId`.
+   */
+  public readonly lookupKey?: string;
+
   constructor(
     public readonly id: string,
     public readonly packageType: AppActorPackageType,
@@ -2250,8 +2268,11 @@ export class AppActorPackage {
     public readonly tokenAmount?: number,
     public readonly position?: number,
     public readonly serverId?: string,
-    public readonly offeringId?: string
-  ) {}
+    public readonly offeringId?: string,
+    lookupKey?: string
+  ) {
+    this.lookupKey = normalizePackageLookupKey(lookupKey);
+  }
 
   toPurchaseParams(): JsonObject {
     return {
@@ -2297,7 +2318,8 @@ export class AppActorPackage {
       optionalInteger(json.token_amount, 'token_amount'),
       optionalInteger(json.position, 'position'),
       optionalString(json.server_id, 'server_id'),
-      optionalString(json.offering_id, 'offering_id')
+      optionalString(json.offering_id, 'offering_id'),
+      optionalString(json.lookup_key, 'lookup_key')
     );
   }
 }
@@ -2326,6 +2348,22 @@ export class AppActorOffering {
 
   packageFor(type: AppActorPackageType): AppActorPackage | undefined {
     return this.packages.find((item) => item.packageType === type);
+  }
+
+  /**
+   * Returns the package whose `lookupKey` matches `lookupKey` exactly, or
+   * `undefined`. Rejects empty, blank, and whitespace-padded keys, and never
+   * falls back to `id`, `packageType`, `productId`, or another package.
+   */
+  packageForLookupKey(lookupKey: string): AppActorPackage | undefined {
+    if (
+      typeof lookupKey !== 'string' ||
+      lookupKey.length === 0 ||
+      lookupKey.trim() !== lookupKey
+    ) {
+      return undefined;
+    }
+    return this.packages.find((item) => item.lookupKey === lookupKey);
   }
 
   get weekly(): AppActorPackage | undefined {

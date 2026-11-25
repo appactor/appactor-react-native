@@ -68,6 +68,7 @@ import {
   appActorIntegrationIdentifierFromString,
   AppActorLogLevel,
   AppActorOptions,
+  AppActorOffering,
   AppActorOfferings,
   AppActorPackage,
   AppActorPackageType,
@@ -156,6 +157,7 @@ function testPackage(
     basePlanId?: string;
     offerId?: string;
     offeringId?: string;
+    lookupKey?: string;
   } = {}
 ): AppActorPackage {
   return new AppActorPackage(
@@ -178,7 +180,8 @@ function testPackage(
     undefined,
     undefined,
     undefined,
-    options.offeringId
+    options.offeringId,
+    options.lookupKey
   );
 }
 
@@ -213,7 +216,7 @@ describe('AppActor React Native', () => {
         api_key: 'pk_test_123',
         options: {
           log_level: 'debug',
-          platform_info: { flavor: 'react-native', version: '0.2.2' },
+          platform_info: { flavor: 'react-native', version: '0.2.3' },
         },
       })
     );
@@ -261,7 +264,7 @@ describe('AppActor React Native', () => {
       JSON.stringify({
         api_key: 'pk_android',
         options: {
-          platform_info: { flavor: 'react-native', version: '0.2.2' },
+          platform_info: { flavor: 'react-native', version: '0.2.3' },
         },
       })
     );
@@ -290,7 +293,7 @@ describe('AppActor React Native', () => {
         api_key: 'pk_test_123',
         app_user_id: '',
         options: {
-          platform_info: { flavor: 'react-native', version: '0.2.2' },
+          platform_info: { flavor: 'react-native', version: '0.2.3' },
         },
       })
     );
@@ -1691,6 +1694,13 @@ describe('AppActor React Native', () => {
         position: 'not_a_number',
       })
     ).toThrow('position must be a number.');
+    expect(() =>
+      AppActorPackage.fromJson({
+        id: 'monthly',
+        product_id: 'com.app.monthly',
+        lookup_key: 42,
+      })
+    ).toThrow('lookup_key must be a string.');
   });
 
   it('defaults missing deferred purchase customer info like Flutter', () => {
@@ -2067,5 +2077,360 @@ describe('AppActor React Native', () => {
     expect(() => new AppActorConstructor()).toThrow(
       'AppActor cannot be instantiated directly. Use AppActor.instance.'
     );
+  });
+
+  it('parses and normalizes lookup_key on AppActorPackage without fallbacks', () => {
+    const valid = AppActorPackage.fromJson({
+      id: 'pkg_annual',
+      package_type: 'annual',
+      product_id: 'com.app.annual',
+      lookup_key: 'pro_annual',
+    });
+    const padded = AppActorPackage.fromJson({
+      id: 'pkg_monthly',
+      package_type: 'monthly',
+      product_id: 'com.app.monthly',
+      lookup_key: '  \tpro_monthly\n  ',
+    });
+    const explicitNull = AppActorPackage.fromJson({
+      id: 'pkg_null',
+      package_type: 'weekly',
+      product_id: 'com.app.weekly',
+      lookup_key: null,
+    });
+    const omitted = AppActorPackage.fromJson({
+      id: 'pkg_omitted',
+      package_type: 'lifetime',
+      product_id: 'com.app.lifetime',
+    });
+    const empty = AppActorPackage.fromJson({
+      id: 'pkg_empty',
+      package_type: 'monthly',
+      product_id: 'com.app.empty',
+      lookup_key: '',
+    });
+    const blank = AppActorPackage.fromJson({
+      id: 'pkg_blank',
+      package_type: 'annual',
+      product_id: 'com.app.blank',
+      lookup_key: '   \t\r\n  ',
+    });
+
+    expect(valid.lookupKey).toBe('pro_annual');
+    expect(padded.lookupKey).toBe('pro_monthly');
+    expect(explicitNull.lookupKey).toBeUndefined();
+    expect(omitted.lookupKey).toBeUndefined();
+    expect(empty.lookupKey).toBeUndefined();
+    expect(blank.lookupKey).toBeUndefined();
+  });
+
+  it('preserves AppActorPackage positional constructor backward compatibility and normalizes lookupKey', () => {
+    const minimal = new AppActorPackage(
+      'monthly',
+      AppActorPackageType.Monthly,
+      'com.app.monthly'
+    );
+    const legacy20Args = new AppActorPackage(
+      'monthly',
+      AppActorPackageType.Monthly,
+      'com.app.monthly',
+      'store.monthly',
+      AppActorProductType.Subscription,
+      AppActorStore.AppStore,
+      'base_plan',
+      'offer_1',
+      '$9.99',
+      9990000,
+      9.99,
+      'USD',
+      'Monthly',
+      'Pro Monthly',
+      'Billed monthly',
+      { badge: 'popular' },
+      0,
+      1,
+      'srv_1',
+      'off_default'
+    );
+    const withLookupKey = new AppActorPackage(
+      'monthly',
+      AppActorPackageType.Monthly,
+      'com.app.monthly',
+      'store.monthly',
+      AppActorProductType.Subscription,
+      AppActorStore.AppStore,
+      'base_plan',
+      'offer_1',
+      '$9.99',
+      9990000,
+      9.99,
+      'USD',
+      'Monthly',
+      'Pro Monthly',
+      'Billed monthly',
+      { badge: 'popular' },
+      0,
+      1,
+      'srv_1',
+      'off_default',
+      '  pro_monthly  '
+    );
+    const withBlankLookupKey = new AppActorPackage(
+      'monthly',
+      AppActorPackageType.Monthly,
+      'com.app.monthly',
+      'store.monthly',
+      AppActorProductType.Subscription,
+      AppActorStore.AppStore,
+      'base_plan',
+      'offer_1',
+      '$9.99',
+      9990000,
+      9.99,
+      'USD',
+      'Monthly',
+      'Pro Monthly',
+      'Billed monthly',
+      { badge: 'popular' },
+      0,
+      1,
+      'srv_1',
+      'off_default',
+      '   '
+    );
+
+    expect(minimal.lookupKey).toBeUndefined();
+    expect(legacy20Args.offeringId).toBe('off_default');
+    expect(legacy20Args.lookupKey).toBeUndefined();
+    expect(withLookupKey.offeringId).toBe('off_default');
+    expect(withLookupKey.lookupKey).toBe('pro_monthly');
+    expect(withBlankLookupKey.lookupKey).toBeUndefined();
+
+    expect(legacy20Args.equals(withBlankLookupKey)).toBe(true);
+    expect(legacy20Args.equals(withLookupKey)).toBe(false);
+    expect(
+      testPackage({ lookupKey: 'pro_monthly' }).equals(
+        testPackage({ lookupKey: '  pro_monthly  ' })
+      )
+    ).toBe(true);
+    expect(
+      testPackage({ lookupKey: 'pro_monthly' }).equals(
+        testPackage({ lookupKey: 'pro_annual' })
+      )
+    ).toBe(false);
+
+    // Purchase params stay limited to bridge purchase parameters.
+    expect(withLookupKey.toPurchaseParams()).toEqual({
+      package_id: 'monthly',
+      store_product_id: 'store.monthly',
+      product_id: 'com.app.monthly',
+      product_type: 'subscription',
+      store: 'app_store',
+      base_plan_id: 'base_plan',
+      offer_id: 'offer_1',
+      offering_id: 'off_default',
+    });
+    expect(withLookupKey.toJson()).toEqual(withLookupKey.toPurchaseParams());
+  });
+
+  it('enforces strict exact-match lookup in AppActorOffering.packageForLookupKey without fallbacks', () => {
+    const monthly = testPackage({
+      id: 'monthly',
+      packageType: AppActorPackageType.Monthly,
+      productId: 'com.app.monthly',
+      lookupKey: 'plan_monthly',
+    });
+    const annual = testPackage({
+      id: 'annual',
+      packageType: AppActorPackageType.Annual,
+      productId: 'com.app.annual',
+      lookupKey: 'plan_annual',
+    });
+    const keyless = testPackage({
+      id: 'lifetime',
+      packageType: AppActorPackageType.Lifetime,
+      productId: 'com.app.lifetime',
+    });
+    const offering = new AppActorOffering(
+      'off_main',
+      'Main',
+      true,
+      'default',
+      undefined,
+      [monthly, annual, keyless]
+    );
+
+    expect(offering.packageForLookupKey('plan_monthly')).toBe(monthly);
+    expect(offering.packageForLookupKey('plan_annual')).toBe(annual);
+
+    // Rejects empty, blank, whitespace-padded, wrong-case, and unmatched keys.
+    expect(offering.packageForLookupKey('')).toBeUndefined();
+    expect(offering.packageForLookupKey('   ')).toBeUndefined();
+    expect(offering.packageForLookupKey('\t\n')).toBeUndefined();
+    expect(offering.packageForLookupKey(' plan_monthly')).toBeUndefined();
+    expect(offering.packageForLookupKey('plan_monthly ')).toBeUndefined();
+    expect(offering.packageForLookupKey(' plan_monthly ')).toBeUndefined();
+    expect(offering.packageForLookupKey('\tplan_annual\n')).toBeUndefined();
+    expect(offering.packageForLookupKey('PLAN_MONTHLY')).toBeUndefined();
+    expect(offering.packageForLookupKey('Plan_Annual')).toBeUndefined();
+    expect(offering.packageForLookupKey('nonexistent')).toBeUndefined();
+
+    // Never falls back to id, packageType, productId, or first package.
+    expect(offering.packageForLookupKey('monthly')).toBeUndefined();
+    expect(offering.packageForLookupKey('annual')).toBeUndefined();
+    expect(offering.packageForLookupKey('lifetime')).toBeUndefined();
+    expect(offering.packageForLookupKey('com.app.monthly')).toBeUndefined();
+    expect(offering.packageForLookupKey('com.app.lifetime')).toBeUndefined();
+
+    // Empty offerings also return undefined.
+    const emptyOffering = new AppActorOffering('off_empty', 'Empty');
+    expect(emptyOffering.packageForLookupKey('plan_monthly')).toBeUndefined();
+  });
+
+  it('never falls back on legacy keyless offerings JSON payloads', () => {
+    const offering = AppActorOffering.fromJson({
+      id: 'off_legacy',
+      display_name: 'Legacy',
+      is_current: true,
+      lookup_key: 'default',
+      packages: [
+        {
+          id: 'monthly',
+          package_type: 'monthly',
+          product_id: 'com.app.monthly',
+        },
+        {
+          id: 'annual',
+          package_type: 'annual',
+          product_id: 'com.app.annual',
+          lookup_key: null,
+        },
+      ],
+    });
+
+    expect(offering.packages[0]?.lookupKey).toBeUndefined();
+    expect(offering.packages[1]?.lookupKey).toBeUndefined();
+    expect(offering.packageForLookupKey('monthly')).toBeUndefined();
+    expect(offering.packageForLookupKey('annual')).toBeUndefined();
+    expect(offering.packageForLookupKey('com.app.monthly')).toBeUndefined();
+    expect(offering.packageForLookupKey('com.app.annual')).toBeUndefined();
+    expect(offering.packageForLookupKey('')).toBeUndefined();
+    expect(offering.packageForLookupKey('   ')).toBeUndefined();
+
+    // Existing id and packageType lookups continue working independently.
+    expect(offering.package('monthly')?.id).toBe('monthly');
+    expect(offering.packageFor(AppActorPackageType.Annual)?.id).toBe('annual');
+  });
+
+  it('carries package lookup_key end-to-end through getOfferings and getCachedOfferings', async () => {
+    const wireOfferings = {
+      current: {
+        id: 'off_1',
+        display_name: 'Default',
+        is_current: true,
+        lookup_key: 'default',
+        packages: [
+          {
+            id: 'pkg_1',
+            package_type: 'annual',
+            product_id: 'com.app.annual',
+            lookup_key: 'pro_annual',
+            offering_id: 'off_1',
+          },
+          {
+            id: 'pkg_2',
+            package_type: 'monthly',
+            product_id: 'com.app.monthly',
+            lookup_key: '  pro_monthly  ',
+            offering_id: 'off_1',
+          },
+          {
+            id: 'pkg_3',
+            package_type: 'weekly',
+            product_id: 'com.app.weekly',
+            lookup_key: null,
+            offering_id: 'off_1',
+          },
+          {
+            id: 'pkg_4',
+            package_type: 'lifetime',
+            product_id: 'com.app.lifetime',
+            offering_id: 'off_1',
+          },
+        ],
+      },
+      all: {
+        off_1: {
+          id: 'off_1',
+          display_name: 'Default',
+          is_current: true,
+          lookup_key: 'default',
+          packages: [
+            {
+              id: 'pkg_1',
+              package_type: 'annual',
+              product_id: 'com.app.annual',
+              lookup_key: 'pro_annual',
+              offering_id: 'off_1',
+            },
+            {
+              id: 'pkg_2',
+              package_type: 'monthly',
+              product_id: 'com.app.monthly',
+              lookup_key: '  pro_monthly  ',
+              offering_id: 'off_1',
+            },
+            {
+              id: 'pkg_3',
+              package_type: 'weekly',
+              product_id: 'com.app.weekly',
+              lookup_key: null,
+              offering_id: 'off_1',
+            },
+            {
+              id: 'pkg_4',
+              package_type: 'lifetime',
+              product_id: 'com.app.lifetime',
+              offering_id: 'off_1',
+            },
+          ],
+        },
+      },
+      product_entitlements: {},
+      verification: 'verified',
+    };
+
+    mockExecute
+      .mockResolvedValueOnce(success(wireOfferings))
+      .mockResolvedValueOnce(success(wireOfferings));
+
+    const liveOfferings = await AppActor.instance.getOfferings();
+    const cachedOfferings = await AppActor.instance.getCachedOfferings();
+
+    for (const offerings of [liveOfferings, cachedOfferings]) {
+      expect(offerings).not.toBeNull();
+      const current = offerings!.current!;
+      expect(current.packages.map((pkg) => pkg.lookupKey)).toEqual([
+        'pro_annual',
+        'pro_monthly',
+        undefined,
+        undefined,
+      ]);
+      expect(current.packageForLookupKey('pro_annual')?.id).toBe('pkg_1');
+      expect(current.packageForLookupKey('pro_monthly')?.id).toBe('pkg_2');
+      expect(current.packageForLookupKey('  pro_monthly  ')).toBeUndefined();
+      expect(current.packageForLookupKey('pkg_3')).toBeUndefined();
+      expect(current.packageForLookupKey('pkg_4')).toBeUndefined();
+      expect(current.packageForLookupKey('weekly')).toBeUndefined();
+      expect(current.packageForLookupKey('com.app.lifetime')).toBeUndefined();
+      expect(
+        offerings!.getOffering('default')?.packageForLookupKey('pro_annual')?.id
+      ).toBe('pkg_1');
+    }
+
+    expect(mockExecute.mock.calls.map((call) => call[0])).toEqual([
+      'get_offerings',
+      'get_cached_offerings',
+    ]);
   });
 });
